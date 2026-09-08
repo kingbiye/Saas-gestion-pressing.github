@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "buildCommand": "npm run db:generate && npm run build --workspace apps/api",
+  "functions": {
+    "api/index.ts": {
+      "runtime": "nodejs20.x",
+      "maxDuration": 30
+    }
+  }
+}

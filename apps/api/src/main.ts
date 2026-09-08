@@ -116,7 +116,7 @@ function recordLoginFailure(email: string) {
   }
 }
 
-async function route(req: IncomingMessage, res: ServerResponse) {
+export async function handleRequest(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? "/", "http://localhost");
 
   if (req.method === "OPTIONS") {
@@ -342,7 +342,9 @@ async function route(req: IncomingMessage, res: ServerResponse) {
   return json(res, 404, { error: "NOT_FOUND" });
 }
 
-const port = Number(process.env.PORT ?? 4000);
-createServer((req, res) => {
-  route(req, res).catch(() => json(res, 400, { error: "INVALID_REQUEST" }));
-}).listen(port, () => console.log(`API listening on ${port}`));
+if (process.env.VERCEL !== "1") {
+  const port = Number(process.env.PORT ?? 4000);
+  createServer((req, res) => {
+    handleRequest(req, res).catch(() => json(res, 400, { error: "INVALID_REQUEST" }));
+  }).listen(port, () => console.log(`API listening on ${port}`));
+}

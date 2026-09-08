@@ -78,6 +78,23 @@ Le service utilise `PORT=10000`, la valeur recommandee par Render. Le build
 execute `prisma generate` puis compile l'API ; les migrations de schema restent
 gerees explicitement avec `npm run db:push` depuis un environnement de confiance.
 
+### Alternative : deployer l'API sur Vercel
+
+L'API peut aussi etre deployee comme une Vercel Function via `api/index.ts`.
+Dans Vercel, creer un projet separe pour l'API avec ce depot, laisser le
+repertoire racine vide, choisir le framework **Other**, puis utiliser :
+
+- Build command : `npm run db:generate && npm run build --workspace apps/api`
+- Install command : `npm install`
+- Root directory : vide
+
+Les routes sont alors accessibles sous `/api`, par exemple `/api/health`.
+Definir les memes variables secretes que pour Render (`DATABASE_URL`,
+`DIRECT_URL`, `AUTH_SECRET`, `WEB_ORIGIN`, `PLATFORM_ADMIN_EMAIL`,
+`PLATFORM_ADMIN_PASSWORD`, `TRIAL_DAYS`) dans les settings Vercel. Le frontend
+doit utiliser l'URL du projet Vercel avec `/api`, par exemple
+`https://pressing-api.vercel.app/api`.
+
 Variables API de production :
 
 - `DATABASE_URL`
