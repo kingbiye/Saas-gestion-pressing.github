@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: pressing-api
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm run db:generate && npm run build --workspace apps/api
+    startCommand: node apps/api/dist/main.js
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: AUTH_SECRET
+        sync: false
+      - key: WEB_ORIGIN
+        sync: false
+      - key: PLATFORM_ADMIN_EMAIL
+        sync: false
+      - key: PLATFORM_ADMIN_PASSWORD
+        sync: false
+      - key: TRIAL_DAYS
+        value: "10"
+      - key: PORT
+        value: "10000"
+      - key: NODE_ENV
+        value: "production"
