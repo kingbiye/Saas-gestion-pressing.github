@@ -1,0 +1,85 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Tenant {
+  id          String    @id @default(cuid())
+  name        String
+  trialEndsAt DateTime
+  plan        String    @default("TRIAL")
+  subscriptionEndsAt DateTime?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  users       User[]
+  services    Service[]
+  deposits    Deposit[]
+  expenses    Expense[]
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  role      String   @default("OWNER")
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  resetTokens PasswordResetToken[]
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model Service {
+  id         String    @id @default(cuid())
+  name       String
+  priceCents Int
+  tenantId   String
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deposits   Deposit[]
+}
+
+model Deposit {
+  id           String   @id @default(cuid())
+  reference    String
+  customerName String
+  customerPhone String?
+  status       String   @default("RECEIVED")
+  priceCents   Int
+  paid         Boolean  @default(false)
+  pickupAt     DateTime?
+  locker       String?
+  tenantId     String
+  serviceId    String?
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  service      Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId, status])
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  label       String
+  amountCents Int
+  incurredAt  DateTime @default(now())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, incurredAt])
+}
