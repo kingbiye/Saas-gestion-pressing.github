@@ -1,4 +1,5 @@
 {
   "version": 2,
-  "buildCommand": "npm run db:generate && npm run build --workspace apps/api"
+  "buildCommand": "npm run db:generate && npm run build --workspace apps/api && mkdir -p public",
+  "outputDirectory": "public"
 }
