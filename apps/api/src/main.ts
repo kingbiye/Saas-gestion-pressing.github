@@ -18,7 +18,7 @@ function json(res: ServerResponse, status: number, data: unknown) {
     "content-type": "application/json",
     "access-control-allow-origin": allowedOrigin,
     "access-control-allow-headers": "content-type, authorization",
-    "access-control-allow-methods": "GET, POST, OPTIONS",
+    "access-control-allow-methods": "GET, POST, PATCH, DELETE, OPTIONS",
     "vary": "Origin",
   });
   res.end(JSON.stringify(data));
@@ -123,7 +123,7 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     res.writeHead(204, {
       "access-control-allow-origin": allowedOrigin,
       "access-control-allow-headers": "content-type, authorization",
-      "access-control-allow-methods": "GET, POST, OPTIONS",
+      "access-control-allow-methods": "GET, POST, PATCH, DELETE, OPTIONS",
       "access-control-max-age": "86400",
     });
     return res.end();
@@ -251,6 +251,30 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     const service = await prisma.service.create({ data: { name, priceCents, tenantId: current.tenant.id } });
     return json(res, 201, service);
   }
+  const serviceMatch = url.pathname.match(/^\/catalog\/([^/]+)$/);
+  if (serviceMatch && req.method === "PATCH") {
+    const service = await prisma.service.findFirst({ where: { id: serviceMatch[1], tenantId: current.tenant.id } });
+    if (!service) return json(res, 404, { error: "SERVICE_NOT_FOUND" });
+    const input = await body(req);
+    const data: { name?: string; priceCents?: number } = {};
+    if (input.name !== undefined) {
+      const name = String(input.name).trim();
+      if (!name) return json(res, 400, { error: "INVALID_SERVICE" });
+      data.name = name;
+    }
+    if (input.priceCents !== undefined) {
+      const priceCents = Number(input.priceCents);
+      if (!Number.isInteger(priceCents) || priceCents < 0) return json(res, 400, { error: "INVALID_SERVICE" });
+      data.priceCents = priceCents;
+    }
+    return json(res, 200, await prisma.service.update({ where: { id: service.id }, data }));
+  }
+  if (serviceMatch && req.method === "DELETE") {
+    const service = await prisma.service.findFirst({ where: { id: serviceMatch[1], tenantId: current.tenant.id } });
+    if (!service) return json(res, 404, { error: "SERVICE_NOT_FOUND" });
+    await prisma.service.delete({ where: { id: service.id } });
+    return json(res, 200, { deleted: true });
+  }
   if (url.pathname === "/deposits" && req.method === "GET") {
     return json(res, 200, await prisma.deposit.findMany({ where: { tenantId: current.tenant.id }, orderBy: { createdAt: "desc" } }));
   }
@@ -282,6 +306,29 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       },
     });
     return json(res, 201, deposit);
+  }
+  const depositMatch = url.pathname.match(/^\/deposits\/([^/]+)$/);
+  if (depositMatch && req.method === "PATCH") {
+    const deposit = await prisma.deposit.findFirst({ where: { id: depositMatch[1], tenantId: current.tenant.id } });
+    if (!deposit) return json(res, 404, { error: "DEPOSIT_NOT_FOUND" });
+    const input = await body(req);
+    const allowedStatuses = ["RECEIVED", "IN_PROGRESS", "READY", "PICKED_UP"];
+    const data: { status?: string; paid?: boolean; pickupAt?: Date; locker?: string } = {};
+    if (input.status !== undefined) {
+      if (!allowedStatuses.includes(String(input.status))) return json(res, 400, { error: "INVALID_STATUS" });
+      data.status = String(input.status);
+    }
+    if (input.paid !== undefined) {
+      if (typeof input.paid !== "boolean") return json(res, 400, { error: "INVALID_PAID" });
+      data.paid = input.paid;
+    }
+    if (input.pickupAt !== undefined) {
+      const pickupAt = new Date(String(input.pickupAt));
+      if (Number.isNaN(pickupAt.getTime())) return json(res, 400, { error: "INVALID_PICKUP_DATE" });
+      data.pickupAt = pickupAt;
+    }
+    if (input.locker !== undefined) data.locker = String(input.locker).trim();
+    return json(res, 200, await prisma.deposit.update({ where: { id: deposit.id }, data }));
   }
   if (url.pathname === "/expenses" && req.method === "GET") {
     return json(res, 200, await prisma.expense.findMany({

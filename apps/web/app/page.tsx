@@ -9,6 +9,20 @@ type Report = { revenueCents: number; expensesCents: number; profitCents: number
 type Billing = { plan: string; expiresAt: string; active: boolean; paymentPending: boolean };
 type AdminTenant = { id: string; name: string; plan: string; isActive: boolean; createdAt: string; _count: { users: number; deposits: number } };
 
+const STATUS_LABELS: Record<string, string> = {
+  RECEIVED: "Reçu",
+  IN_PROGRESS: "En cours",
+  READY: "Prêt",
+  PICKED_UP: "Récupéré",
+};
+
+const STATUS_ORDER = ["RECEIVED", "IN_PROGRESS", "READY", "PICKED_UP"];
+
+function nextStatus(status: string): string | null {
+  const index = STATUS_ORDER.indexOf(status);
+  return index >= 0 && index < STATUS_ORDER.length - 1 ? STATUS_ORDER[index + 1] : null;
+}
+
 async function request<T>(path: string, options: RequestInit = {}) {
   const token = localStorage.getItem("pressing_admin_token")
     ?? localStorage.getItem("pressing_token")
@@ -31,6 +45,9 @@ export default function Home() {
   const [tenantName, setTenantName] = useState("");
   const [serviceName, setServiceName] = useState("");
   const [price, setPrice] = useState("");
+  const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
+  const [editingServiceName, setEditingServiceName] = useState("");
+  const [editingServicePrice, setEditingServicePrice] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [depositServiceId, setDepositServiceId] = useState("");
@@ -189,12 +206,55 @@ export default function Home() {
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Article impossible à créer."); }
   }
 
+  function startEditService(service: Service) {
+    setEditingServiceId(service.id);
+    setEditingServiceName(service.name);
+    setEditingServicePrice(String(service.priceCents / 100));
+  }
+
+  async function saveService(event: FormEvent) {
+    event.preventDefault();
+    if (!editingServiceId) return;
+    try {
+      await request(`/catalog/${editingServiceId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: editingServiceName, priceCents: Number(editingServicePrice) * 100 }),
+      });
+      setEditingServiceId(null);
+      await refresh();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Modification impossible."); }
+  }
+
+  async function removeService(service: Service) {
+    if (!window.confirm(`Supprimer l'article "${service.name}" ?`)) return;
+    try {
+      await request(`/catalog/${service.id}`, { method: "DELETE" });
+      await refresh();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Suppression impossible."); }
+  }
+
   async function createDeposit(event: FormEvent) {
     event.preventDefault();
     try {
       await request("/deposits", { method: "POST", body: JSON.stringify({ customerName, customerPhone, serviceId: depositServiceId || undefined, pickupAt: pickupAt || undefined, locker, paid }) });
       setCustomerName(""); setCustomerPhone(""); setDepositServiceId(""); setPickupAt(""); setLocker(""); setPaid(false); await refresh();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Dépôt impossible à créer."); }
+  }
+
+  async function advanceDeposit(deposit: Deposit) {
+    const next = nextStatus(deposit.status);
+    if (!next) return;
+    try {
+      await request(`/deposits/${deposit.id}`, { method: "PATCH", body: JSON.stringify({ status: next }) });
+      await refresh();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Mise à jour impossible."); }
+  }
+
+  async function toggleDepositPaid(deposit: Deposit) {
+    try {
+      await request(`/deposits/${deposit.id}`, { method: "PATCH", body: JSON.stringify({ paid: !deposit.paid }) });
+      await refresh();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Mise à jour impossible."); }
   }
 
   async function createExpense(event: FormEvent) {
@@ -207,14 +267,14 @@ export default function Home() {
 
   if (!authenticated) {
     if (forgotMode) {
-      return <main className="auth"><section className="hero"><small>PRESSING OS</small><h1>Récupérez votre accès.</h1><p>Votre mot de passe n’est jamais affiché ni stocké en clair.</p></section><section className="card"><small>SÉCURITÉ</small><h2>{resetToken ? "Nouveau mot de passe" : "Mot de passe oublié"}</h2><p className="muted">{resetToken ? "Choisissez un nouveau mot de passe sécurisé." : "Saisissez votre email pour recevoir un lien."}</p><form onSubmit={resetToken ? resetAccountPassword : requestPasswordReset}>{!resetToken ? <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email professionnel" required /> : <input type="password" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} placeholder="Nouveau mot de passe (8 caractères minimum)" minLength={8} required />}{error && <p className="error">{error}</p>}<button type="submit">{resetToken ? "Réinitialiser" : "Recevoir le lien"}</button></form><button className="link" onClick={() => { setForgotMode(false); setError(""); }}>Retour à la connexion</button></section></main>;
+      return <main className="auth"><section className="hero"><small>PRESSING OS</small><h1>Récupérez votre accès.</h1><p>Votre mot de passe n'est jamais affiché ni stocké en clair.</p></section><section className="card"><small>SÉCURITÉ</small><h2>{resetToken ? "Nouveau mot de passe" : "Mot de passe oublié"}</h2><p className="muted">{resetToken ? "Choisissez un nouveau mot de passe sécurisé." : "Saisissez votre email pour recevoir un lien."}</p><form onSubmit={resetToken ? resetAccountPassword : requestPasswordReset}>{!resetToken ? <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email professionnel" required /> : <input type="password" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} placeholder="Nouveau mot de passe (8 caractères minimum)" minLength={8} required />}{error && <p className="error">{error}</p>}<button type="submit">{resetToken ? "Réinitialiser" : "Recevoir le lien"}</button></form><button className="link" onClick={() => { setForgotMode(false); setError(""); }}>Retour à la connexion</button></section></main>;
     }
-    return <main className="auth"><section className="hero"><small>PRESSING OS</small><h1>Votre pressing, enfin maîtrisé.</h1><p>Articles, dépôts et activité réunis dans un espace simple.</p></section><section className="card"><small>{adminMode ? "ADMINISTRATION PLATEFORME" : "ESPACE PROFESSIONNEL"}</small><h2>{adminMode ? "Administration" : register ? "Créer votre boutique" : "Bon retour"}</h2><p className="muted">{adminMode ? "Gérez les boutiques et les comptes." : register ? "10 jours d'essai gratuit." : "Connectez-vous à votre espace."}</p><form onSubmit={adminMode ? authenticateAdmin : authenticate}>{adminMode ? <><input type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} placeholder="Email administrateur" required /><div className="password-field"><input type={showAdminPassword ? "text" : "password"} value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} placeholder="Mot de passe administrateur" required /><button type="button" className="password-toggle" onClick={() => setShowAdminPassword(!showAdminPassword)} aria-label={showAdminPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}>{showAdminPassword ? "Masquer" : "Voir"}</button></div></> : <>{register && <input value={tenantName} onChange={(e) => setTenantName(e.target.value)} placeholder="Nom du pressing" required />}<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email professionnel" required /><div className="password-field"><input type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mot de passe (8 caractères minimum)" minLength={8} required /><button type="button" className="password-toggle" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}>{showPassword ? "Masquer" : "Voir"}</button></div></>}<label className="check"><input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} /> Se souvenir de moi</label>{error && <p className="error">{error}</p>}<button type="submit">{adminMode ? "Ouvrir l’administration" : register ? "Démarrer l'essai" : "Se connecter"}</button></form>{!adminMode && <button className="link" onClick={() => { setRegister(!register); setError(""); }}>{register ? "J'ai déjà un compte" : "Créer un compte"}</button>}{!adminMode && !register && <button className="link" onClick={() => { setForgotMode(true); setError(""); }}>Mot de passe oublié ?</button>}<button className="link" onClick={() => { setAdminMode(!adminMode); setError(""); }}>{adminMode ? "Retour à l’espace pressing" : "Accès administrateur"}</button></section></main>;
+    return <main className="auth"><section className="hero"><small>PRESSING OS</small><h1>Votre pressing, enfin maîtrisé.</h1><p>Articles, dépôts et activité réunis dans un espace simple.</p></section><section className="card"><small>{adminMode ? "ADMINISTRATION PLATEFORME" : "ESPACE PROFESSIONNEL"}</small><h2>{adminMode ? "Administration" : register ? "Créer votre boutique" : "Bon retour"}</h2><p className="muted">{adminMode ? "Gérez les boutiques et les comptes." : register ? "10 jours d'essai gratuit." : "Connectez-vous à votre espace."}</p><form onSubmit={adminMode ? authenticateAdmin : authenticate}>{adminMode ? <><input type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} placeholder="Email administrateur" required /><div className="password-field"><input type={showAdminPassword ? "text" : "password"} value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} placeholder="Mot de passe administrateur" required /><button type="button" className="password-toggle" onClick={() => setShowAdminPassword(!showAdminPassword)} aria-label={showAdminPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}>{showAdminPassword ? "Masquer" : "Voir"}</button></div></> : <>{register && <input value={tenantName} onChange={(e) => setTenantName(e.target.value)} placeholder="Nom du pressing" required />}<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email professionnel" required /><div className="password-field"><input type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mot de passe (8 caractères minimum)" minLength={8} required /><button type="button" className="password-toggle" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}>{showPassword ? "Masquer" : "Voir"}</button></div></>}<label className="check"><input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} /> Se souvenir de moi</label>{error && <p className="error">{error}</p>}<button type="submit">{adminMode ? "Ouvrir l'administration" : register ? "Démarrer l'essai" : "Se connecter"}</button></form>{!adminMode && <button className="link" onClick={() => { setRegister(!register); setError(""); }}>{register ? "J'ai déjà un compte" : "Créer un compte"}</button>}{!adminMode && !register && <button className="link" onClick={() => { setForgotMode(true); setError(""); }}>Mot de passe oublié ?</button>}<button className="link" onClick={() => { setAdminMode(!adminMode); setError(""); }}>{adminMode ? "Retour à l'espace pressing" : "Accès administrateur"}</button></section></main>;
   }
 
   if (adminAuthenticated) {
     return <main className="dashboard"><header><div><small>PRESSING OS · ADMIN</small><h1>Gestion des boutiques</h1></div><button className="secondary" onClick={() => { localStorage.removeItem("pressing_admin_token"); sessionStorage.removeItem("pressing_admin_token"); localStorage.removeItem("pressing_token"); sessionStorage.removeItem("pressing_token"); setAdminAuthenticated(false); setAdminMode(false); setAuthenticated(false); }}>Se déconnecter</button></header>{error && <p className="error">{error}</p>}<section className="stats"><div><span>Boutiques</span><strong>{tenants.length}</strong></div><div><span>Utilisateurs</span><strong>{tenants.reduce((total, tenant) => total + tenant._count.users, 0)}</strong></div><div><span>Dépôts</span><strong>{tenants.reduce((total, tenant) => total + tenant._count.deposits, 0)}</strong></div></section><section className="panel admin-list"><small>SUPERVISION</small><h2>Comptes clients</h2>{tenants.map((tenant) => <div className="admin-row" key={tenant.id}><div><strong>{tenant.name}</strong><small>{tenant._count.users} utilisateur(s) · {tenant._count.deposits} dépôt(s) · {tenant.plan}</small></div><span className={tenant.isActive ? "badge active-badge" : "badge"}>{tenant.isActive ? "Actif" : "Suspendu"}</span><button className="secondary" onClick={() => updateTenant(tenant)}>{tenant.isActive ? "Suspendre" : "Réactiver"}</button><button className="danger" onClick={() => deleteTenant(tenant)}>Supprimer</button></div>)}{tenants.length === 0 && <p className="muted">Aucune boutique enregistrée.</p>}</section></main>;
   }
 
-  return <main className="dashboard"><header><div><small>PRESSING OS</small><h1>Tableau de bord</h1></div><button className="secondary" onClick={() => { localStorage.removeItem("pressing_token"); sessionStorage.removeItem("pressing_token"); setAuthenticated(false); }}>Se déconnecter</button></header>{error && <p className="error">{error}</p>}{billing && <p className="success">{billing.plan === "TRIAL" ? `Essai gratuit actif jusqu'au ${new Date(billing.expiresAt).toLocaleDateString("fr-FR")}.` : `Plan ${billing.plan} actif.`}</p>}<section className="stats"><div><span>Chiffre d'affaires</span><strong>{report.revenueCents / 100} FCFA</strong></div><div><span>Dépenses</span><strong>{report.expensesCents / 100} FCFA</strong></div><div><span>Bénéfice</span><strong className="active">{report.profitCents / 100} FCFA</strong></div></section><section className="columns"><article className="panel"><small>CATALOGUE</small><h2>Articles & services</h2><form className="row" onSubmit={createService}><input value={serviceName} onChange={(e) => setServiceName(e.target.value)} placeholder="Nom de l'article" required /><input type="number" min="0" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="Prix FCFA" required /><button>Ajouter</button></form>{services.map((service) => <div className="item" key={service.id}><span>{service.name}</span><b>{service.priceCents / 100} FCFA</b></div>)}</article><article className="panel"><small>DÉPÔTS</small><h2>Nouveau dépôt</h2><form onSubmit={createDeposit}><input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Nom du client" required /><input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Téléphone du client" /><select value={depositServiceId} onChange={(e) => setDepositServiceId(e.target.value)}><option value="">Choisir un article</option>{services.map((service) => <option key={service.id} value={service.id}>{service.name} - {service.priceCents / 100} FCFA</option>)}</select><input type="datetime-local" value={pickupAt} onChange={(e) => setPickupAt(e.target.value)} /><input value={locker} onChange={(e) => setLocker(e.target.value)} placeholder="Casier (ex. A1)" /><label className="check"><input type="checkbox" checked={paid} onChange={(e) => setPaid(e.target.checked)} /> Client déjà payé</label><button>Enregistrer le dépôt</button></form>{deposits.map((deposit) => <div className="item" key={deposit.id}><span>{deposit.customerName}<small>{deposit.reference} · {deposit.paid ? "Payé" : "À payer"}{deposit.locker ? ` · Casier ${deposit.locker}` : ""}</small></span><b>{deposit.priceCents / 100} FCFA</b></div>)}</article><article className="panel"><small>GESTION</small><h2>Dépenses du mois</h2><form className="row" onSubmit={createExpense}><input value={expenseLabel} onChange={(e) => setExpenseLabel(e.target.value)} placeholder="Libellé" required /><input type="number" min="1" value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} placeholder="Montant FCFA" required /><button>Ajouter</button></form></article></section></main>;
+  return <main className="dashboard"><header><div><small>PRESSING OS</small><h1>Tableau de bord</h1></div><button className="secondary" onClick={() => { localStorage.removeItem("pressing_token"); sessionStorage.removeItem("pressing_token"); setAuthenticated(false); }}>Se déconnecter</button></header>{error && <p className="error">{error}</p>}{billing && <p className="success">{billing.plan === "TRIAL" ? `Essai gratuit actif jusqu'au ${new Date(billing.expiresAt).toLocaleDateString("fr-FR")}.` : `Plan ${billing.plan} actif.`}</p>}<section className="stats"><div><span>Chiffre d'affaires</span><strong>{report.revenueCents / 100} FCFA</strong></div><div><span>Dépenses</span><strong>{report.expensesCents / 100} FCFA</strong></div><div><span>Bénéfice</span><strong className="active">{report.profitCents / 100} FCFA</strong></div></section><section className="columns"><article className="panel"><small>CATALOGUE</small><h2>Articles & services</h2><form className="row" onSubmit={createService}><input value={serviceName} onChange={(e) => setServiceName(e.target.value)} placeholder="Nom de l'article" required /><input type="number" min="0" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="Prix FCFA" required /><button>Ajouter</button></form>{services.map((service) => editingServiceId === service.id ? <form className="row" key={service.id} onSubmit={saveService}><input value={editingServiceName} onChange={(e) => setEditingServiceName(e.target.value)} required /><input type="number" min="0" value={editingServicePrice} onChange={(e) => setEditingServicePrice(e.target.value)} required /><button>Enregistrer</button><button type="button" className="link" onClick={() => setEditingServiceId(null)}>Annuler</button></form> : <div className="item" key={service.id}><span>{service.name}</span><b>{service.priceCents / 100} FCFA</b><button className="secondary" onClick={() => startEditService(service)}>Modifier</button><button className="danger" onClick={() => removeService(service)}>Supprimer</button></div>)}</article><article className="panel"><small>DÉPÔTS</small><h2>Nouveau dépôt</h2><form onSubmit={createDeposit}><input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Nom du client" required /><input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Téléphone du client" /><select value={depositServiceId} onChange={(e) => setDepositServiceId(e.target.value)}><option value="">Choisir un article</option>{services.map((service) => <option key={service.id} value={service.id}>{service.name} - {service.priceCents / 100} FCFA</option>)}</select><input type="datetime-local" value={pickupAt} onChange={(e) => setPickupAt(e.target.value)} /><input value={locker} onChange={(e) => setLocker(e.target.value)} placeholder="Casier (ex. A1)" /><label className="check"><input type="checkbox" checked={paid} onChange={(e) => setPaid(e.target.checked)} /> Client déjà payé</label><button>Enregistrer le dépôt</button></form>{deposits.map((deposit) => <div className="item" key={deposit.id}><span>{deposit.customerName}<small>{deposit.reference} · {STATUS_LABELS[deposit.status] ?? deposit.status} · {deposit.paid ? "Payé" : "À payer"}{deposit.locker ? ` · Casier ${deposit.locker}` : ""}</small></span><b>{deposit.priceCents / 100} FCFA</b>{nextStatus(deposit.status) && <button className="secondary" onClick={() => advanceDeposit(deposit)}>{STATUS_LABELS[nextStatus(deposit.status)!]}</button>}<button className="secondary" onClick={() => toggleDepositPaid(deposit)}>{deposit.paid ? "Marquer à payer" : "Marquer payé"}</button></div>)}</article><article className="panel"><small>GESTION</small><h2>Dépenses du mois</h2><form className="row" onSubmit={createExpense}><input value={expenseLabel} onChange={(e) => setExpenseLabel(e.target.value)} placeholder="Libellé" required /><input type="number" min="1" value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} placeholder="Montant FCFA" required /><button>Ajouter</button></form></article></section></main>;
 }
