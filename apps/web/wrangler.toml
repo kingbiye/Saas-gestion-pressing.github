@@ -3,5 +3,5 @@ name = "saas-gestion-pressing-github"
 compatibility_date = "2024-09-23"
 
 [assets]
-directory = "./out"
+directory = "./out" 
 not_found_handling = "single-page-application"
