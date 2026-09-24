@@ -6,4 +6,4 @@ export default function handler(req: IncomingMessage, res: ServerResponse) {
     res.writeHead(400, { "content-type": "application/json" });
     res.end(JSON.stringify({ error: "INVALID_REQUEST" }));
   });
-}
+} 
