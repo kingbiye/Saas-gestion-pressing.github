@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { createHash, createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
+import { pathToFileURL } from "node:url";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
@@ -8,12 +9,23 @@ const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 const trialDays = Number(process.env.TRIAL_DAYS ?? 10);
 const maxLoginAttempts = 5;
 const attemptWindowMs = 15 * 60 * 1000;
-const authSecret = process.env.AUTH_SECRET ?? randomBytes(32).toString("hex");
+const developmentAuthSecret = randomBytes(32).toString("hex");
 const allowedOrigin = process.env.WEB_ORIGIN ?? "http://localhost:3000";
 const platformAdminEmail = process.env.PLATFORM_ADMIN_EMAIL?.trim().toLowerCase();
 const platformAdminPassword = process.env.PLATFORM_ADMIN_PASSWORD;
 
-function json(res: ServerResponse, status: number, data: unknown) {
+export interface ApiRequest extends AsyncIterable<string | Uint8Array> {
+  method?: string;
+  url?: string;
+  headers: { authorization?: string | string[] };
+}
+
+export interface ApiResponse {
+  writeHead(status: number, headers?: Record<string, string>): unknown;
+  end(chunk?: string): unknown;
+}
+
+function json(res: ApiResponse, status: number, data: unknown) {
   res.writeHead(status, {
     "content-type": "application/json",
     "access-control-allow-origin": allowedOrigin,
@@ -24,16 +36,24 @@ function json(res: ServerResponse, status: number, data: unknown) {
   res.end(JSON.stringify(data));
 }
 
+function getAuthSecret(): string {
+  if (process.env.AUTH_SECRET) return process.env.AUTH_SECRET;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("AUTH_SECRET must be configured in production.");
+  }
+  return developmentAuthSecret;
+}
+
 function signToken(userId: string, role = "USER"): string {
   const payload = Buffer.from(JSON.stringify({ sub: userId, role, exp: Date.now() + 7 * 86400000 })).toString("base64url");
-  const signature = createHmac("sha256", authSecret).update(payload).digest("base64url");
+  const signature = createHmac("sha256", getAuthSecret()).update(payload).digest("base64url");
   return `${payload}.${signature}`;
 }
 
 function verifyToken(token: string): { sub: string; role: string } | null {
   const [payload, signature] = token.split(".");
   if (!payload || !signature) return null;
-  const expected = createHmac("sha256", authSecret).update(payload).digest("base64url");
+  const expected = createHmac("sha256", getAuthSecret()).update(payload).digest("base64url");
   const actualBuffer = Buffer.from(signature);
   const expectedBuffer = Buffer.from(expected);
   if (actualBuffer.length !== expectedBuffer.length || !timingSafeEqual(actualBuffer, expectedBuffer)) return null;
@@ -47,7 +67,7 @@ function verifyToken(token: string): { sub: string; role: string } | null {
   }
 }
 
-async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
+async function body(req: ApiRequest): Promise<Record<string, unknown>> {
   let raw = "";
   for await (const chunk of req) raw += chunk;
   if (!raw) return {};
@@ -74,8 +94,9 @@ function hashResetToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-async function session(req: IncomingMessage, res: ServerResponse) {
-  const rawToken = req.headers.authorization?.replace(/^Bearer\s+/i, "");
+async function session(req: ApiRequest, res: ApiResponse) {
+  const rawAuthorization = req.headers.authorization;
+  const rawToken = (Array.isArray(rawAuthorization) ? rawAuthorization[0] : rawAuthorization)?.replace(/^Bearer\s+/i, "");
   const token = rawToken ? verifyToken(rawToken) : null;
   const user = token?.role !== "PLATFORM_ADMIN" && token?.sub
     ? await prisma.user.findUnique({ where: { id: token.sub }, include: { tenant: true } })
@@ -96,8 +117,9 @@ async function session(req: IncomingMessage, res: ServerResponse) {
   return { user, tenant };
 }
 
-function isPlatformAdmin(req: IncomingMessage): boolean {
-  const rawToken = req.headers.authorization?.replace(/^Bearer\s+/i, "");
+function isPlatformAdmin(req: ApiRequest): boolean {
+  const rawAuthorization = req.headers.authorization;
+  const rawToken = (Array.isArray(rawAuthorization) ? rawAuthorization[0] : rawAuthorization)?.replace(/^Bearer\s+/i, "");
   return Boolean(rawToken && verifyToken(rawToken)?.role === "PLATFORM_ADMIN");
 }
 
@@ -116,7 +138,7 @@ function recordLoginFailure(email: string) {
   }
 }
 
-export async function handleRequest(req: IncomingMessage, res: ServerResponse) {
+export async function handleRequest(req: ApiRequest, res: ApiResponse) {
   const url = new URL(req.url ?? "/", "http://localhost");
 
   if (req.method === "OPTIONS") {
@@ -389,7 +411,7 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse) {
   return json(res, 404, { error: "NOT_FOUND" });
 }
 
-if (process.env.VERCEL !== "1") {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const port = Number(process.env.PORT ?? 4000);
   createServer((req, res) => {
     handleRequest(req, res).catch(() => json(res, 400, { error: "INVALID_REQUEST" }));

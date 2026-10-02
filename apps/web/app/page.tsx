@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const API = "/api";
 type Service = { id: string; name: string; priceCents: number };
 type Deposit = { id: string; reference: string; customerName: string; customerPhone?: string; status: string; priceCents: number; paid: boolean; pickupAt?: string; locker?: string };
 type Report = { revenueCents: number; expensesCents: number; profitCents: number };

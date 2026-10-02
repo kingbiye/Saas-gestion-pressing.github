@@ -1,115 +1,102 @@
-# Pressing SaaS MVP
+# Pressing SaaS
 
-Monorepo TypeScript pour la gestion multi-tenant d'un pressing : authentification,
-catalogue, depots, bilan mensuel et essai de 10 jours.
+Application de gestion multi-tenant pour pressing, avec inscription, catalogue,
+dépôts, dépenses, rapports mensuels et administration de la plateforme.
 
-## Demarrage local
+## Architecture
+
+- `apps/web` : interface Next.js et routes API exécutées dans le runtime Node.js
+  de Vercel. Le navigateur appelle l'API sur la même origine via `/api`.
+- `apps/api` : logique métier HTTP utilisée par les routes Next.js et le serveur
+  local de développement.
+- `prisma` : schéma de données PostgreSQL.
+- Supabase héberge PostgreSQL ; Vercel héberge l'application web et son API.
+
+## Développement local
+
+Prérequis : Node.js 20+ et une base PostgreSQL Supabase.
 
 ```bash
 npm ci
 copy .env.example .env
 npm run db:generate
 npm run db:push
-npm run verify
-npm run dev:api
+npm run dev
 ```
 
-L'API ecoute sur `http://localhost:4000` et le frontend sur `http://localhost:3000`.
+L'application est disponible sur `http://localhost:3000`. Pour démarrer
+uniquement l'API autonome, utilisez `npm run dev:api` ; celle-ci écoute sur
+`http://localhost:4000`.
 
-## Qualite et CI
+## Vérification
 
-`npm run verify` regenere Prisma, verifie TypeScript et execute les builds de
-production. Le workflow `.github/workflows/ci.yml` lance cette verification avec
-`npm ci` sur chaque push et pull request vers `main`. Une publication doit etre
-bloquee si la CI echoue.
+```bash
+npm run verify
+```
+
+Cette commande génère le client Prisma, vérifie les types et compile les
+workspaces. La CI GitHub exécute aussi cette vérification.
 
 ## API
 
-- `POST /auth/register`, `POST /auth/login`
-- `POST /admin/login`
-- `GET|POST /catalog`
-- `GET|POST /deposits`
-- `GET|POST /expenses`
-- `GET /reports/monthly`
-- `GET /billing/status`
-- `GET /health`
+- `POST /api/auth/register`, `POST /api/auth/login`
+- `POST /api/auth/forgot-password`, `POST /api/auth/reset-password`
+- `POST /api/admin/login`
+- `GET|POST /api/catalog`, `PATCH|DELETE /api/catalog/:id`
+- `GET|POST /api/deposits`, `PATCH /api/deposits/:id`
+- `GET|POST /api/expenses`
+- `GET /api/reports/monthly`
+- `GET /api/billing/status`
+- `GET /api/health`
 
-Les routes metier exigent `Authorization: Bearer <token>` et renvoient
-`402 TRIAL_EXPIRED` apres la periode configuree.
+Les routes métier nécessitent un jeton Bearer. Les données sont isolées par
+tenant. Les comptes suspendus ou dont l'essai est terminé ne peuvent plus
+utiliser les routes métier.
 
-## Deploiement
+## Déploiement Vercel et Supabase
 
-Le frontend est exporte en fichiers statiques (`apps/web/out`) pour Cloudflare Pages.
+1. Créer un projet PostgreSQL dans Supabase.
+2. Dans les paramètres Supabase, récupérer l'URL du pooler de connexion pour
+   `DATABASE_URL` (transaction pooler, port `6543`, avec
+   `pgbouncer=true&connection_limit=1`) et l'URL PostgreSQL directe pour
+   `DIRECT_URL` (port `5432`).
+3. Depuis la racine du dépôt, configurer le projet Vercel avec le framework
+   **Next.js**. Le projet doit pouvoir accéder aux workspaces du monorepo ; ne
+   pas définir `apps/web` comme racine du projet, car les routes API utilisent
+   aussi le workspace `apps/api`.
+4. Définir la commande de build :
 
-Configuration Cloudflare Pages :
+   ```bash
+   npm run db:generate && npm run build --workspace apps/web
+   ```
 
-1. Connecter le depot GitHub a Cloudflare Pages.
-2. Laisser le repertoire racine du projet vide (le monorepo utilise le `package-lock.json` racine).
-3. Commande de build : `npm run build --workspace apps/web`.
-4. Repertoire de sortie : `apps/web/out`.
-5. Definir la variable d'environnement `NEXT_PUBLIC_API_URL` avec l'URL HTTPS
-   publique de l'API, par exemple `https://api.example.com`.
-6. Utiliser Node.js 20 ou superieur dans les parametres de build.
+5. Ajouter les variables d'environnement Vercel pour chaque environnement
+   utilisé (`Production`, et éventuellement `Preview` et `Development`) :
+   `DATABASE_URL`, `DIRECT_URL`, `AUTH_SECRET`, `PLATFORM_ADMIN_EMAIL`,
+   `PLATFORM_ADMIN_PASSWORD` et `TRIAL_DAYS`.
+6. Générer une valeur longue et aléatoire pour `AUTH_SECRET`. Les secrets
+   Supabase et administrateur doivent rester dans les variables Vercel, jamais
+   dans une variable `NEXT_PUBLIC_*` ni dans Git.
+7. Appliquer le schéma à la base depuis un environnement de confiance :
 
-La variable `NEXT_PUBLIC_API_URL` est integree au build frontend : apres toute
-modification, declencher un nouveau deploiement. Ne jamais mettre de secret
-dans les variables `NEXT_PUBLIC_*`. Le fichier `apps/web/public/_headers`
-ajoute les en-tetes de securite pris en charge par Cloudflare Pages.
+   ```bash
+   npm run db:push
+   ```
 
-L'API utilise Node.js et Prisma avec PostgreSQL. Le fichier `render.yaml`
-decrit un deploiement Render avec un health-check sur `/health`. Configurez
-toutes les variables secretes dans Render, jamais dans GitHub.
+8. Après le déploiement, vérifier `https://<projet>.vercel.app/api/health`.
 
-Deploiement de l'API sur Render :
+Le front et l'API sont servis sur la même origine Vercel : aucune URL d'API
+publique distincte ni configuration CORS de production n'est nécessaire.
 
-1. Creer un nouveau **Blueprint** dans Render et selectionner le depot GitHub.
-2. Render detecte `render.yaml` et cree le service `pressing-api`.
-3. Renseigner `DATABASE_URL`, `DIRECT_URL`, `AUTH_SECRET`,
-   `PLATFORM_ADMIN_EMAIL`, `PLATFORM_ADMIN_PASSWORD` et `WEB_ORIGIN` dans
-   l'onglet **Environment**. `WEB_ORIGIN` doit etre l'URL HTTPS exacte du
-   frontend Cloudflare Pages, sans slash final.
-4. Generer `AUTH_SECRET` avec une valeur aleatoire longue et ne jamais reutiliser
-   le mot de passe Supabase ou le mot de passe administrateur ailleurs.
-5. Apres le premier deploiement, verifier `https://<service>.onrender.com/health`.
-6. Reporter cette URL publique dans `NEXT_PUBLIC_API_URL` sur Cloudflare Pages,
-   puis redeployer le frontend.
+## Variables d'environnement
 
-Le service utilise `PORT=10000`, la valeur recommandee par Render. Le build
-execute `prisma generate` puis compile l'API ; les migrations de schema restent
-gerees explicitement avec `npm run db:push` depuis un environnement de confiance.
+- `DATABASE_URL` : connexion Supabase via le pooler transactionnel.
+- `DIRECT_URL` : connexion PostgreSQL directe Supabase utilisée par Prisma.
+- `AUTH_SECRET` : secret de signature des jetons, obligatoire en production.
+- `PLATFORM_ADMIN_EMAIL` et `PLATFORM_ADMIN_PASSWORD` : identifiants de
+  l'administration de la plateforme.
+- `TRIAL_DAYS` : durée de l'essai en jours (10 par défaut).
+- `WEB_ORIGIN` et `PORT` : utilisés par le serveur API autonome local.
 
-### Alternative : deployer l'API sur Vercel
-
-L'API peut aussi etre deployee comme une Vercel Function via `api/index.ts`.
-Dans Vercel, creer un projet separe pour l'API avec ce depot, laisser le
-repertoire racine vide, choisir le framework **Other**, puis utiliser :
-
-- Build command : `npm run db:generate && npm run build --workspace apps/api`
-- Install command : `npm install`
-- Root directory : vide
-
-Les routes sont alors accessibles sous `/api`, par exemple `/api/health`.
-Definir les memes variables secretes que pour Render (`DATABASE_URL`,
-`DIRECT_URL`, `AUTH_SECRET`, `WEB_ORIGIN`, `PLATFORM_ADMIN_EMAIL`,
-`PLATFORM_ADMIN_PASSWORD`, `TRIAL_DAYS`) dans les settings Vercel. Le frontend
-doit utiliser l'URL du projet Vercel avec `/api`, par exemple
-`https://pressing-api.vercel.app/api`.
-
-Variables API de production :
-
-- `DATABASE_URL`
-- `DIRECT_URL`
-- `AUTH_SECRET`
-- `WEB_ORIGIN`
-- `PLATFORM_ADMIN_EMAIL`
-- `PLATFORM_ADMIN_PASSWORD`
-- `TRIAL_DAYS`
-- `PORT`
-
-## Hygiene de production
-
-- Ne jamais versionner `.env` ou les mots de passe.
-- Utiliser `npm ci`, jamais `npm install`, dans CI et les builds de production.
-- Ne pas reutiliser un dossier `.next` ou `dist` local : chaque plateforme genere un build propre.
-- Executer `/health` apres chaque deploiement.
-- Utiliser les redeploiements/rollbacks du fournisseur si un health-check echoue.
+Ne jamais versionner `.env` ou d'autres secrets. Utiliser `npm ci` pour une
+installation reproductible.
