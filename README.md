@@ -60,15 +60,12 @@ utiliser les routes métier.
    `DATABASE_URL` (transaction pooler, port `6543`, avec
    `pgbouncer=true&connection_limit=1`) et l'URL PostgreSQL directe pour
    `DIRECT_URL` (port `5432`).
-3. Depuis la racine du dépôt, configurer le projet Vercel avec le framework
-   **Next.js**. Le projet doit pouvoir accéder aux workspaces du monorepo ; ne
-   pas définir `apps/web` comme racine du projet, car les routes API utilisent
-   aussi le workspace `apps/api`.
-4. Définir la commande de build :
-
-   ```bash
-   npm run db:generate && npm run build --workspace apps/web
-   ```
+3. Importer le dépôt dans Vercel, sélectionner **Next.js** et définir
+   `apps/web` comme **Root Directory**. Garder l'installation npm à la racine
+   du monorepo pour que les dépendances partagées et le lockfile soient utilisés.
+   La configuration Next.js autorise l'import du code partagé de `apps/api`.
+4. Laisser la commande de build par défaut (`npm run build`). Le script
+   `prebuild` génère le client Prisma avant la compilation Next.js.
 
 5. Ajouter les variables d'environnement Vercel pour chaque environnement
    utilisé (`Production`, et éventuellement `Preview` et `Development`) :

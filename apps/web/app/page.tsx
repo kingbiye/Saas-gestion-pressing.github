@@ -1,53 +1,152 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 
-const API = "/api";
 type Service = { id: string; name: string; priceCents: number };
-type Deposit = { id: string; reference: string; customerName: string; customerPhone?: string; status: string; priceCents: number; paid: boolean; pickupAt?: string; locker?: string };
-type Report = { revenueCents: number; expensesCents: number; profitCents: number };
+type Deposit = {
+  id: string;
+  reference: string;
+  customerName: string;
+  customerPhone?: string | null;
+  status: string;
+  priceCents: number;
+  paid: boolean;
+  pickupAt?: string | null;
+  locker?: string | null;
+  createdAt: string;
+};
+type Expense = { id: string; label: string; amountCents: number; incurredAt: string };
+type Report = {
+  month: string;
+  revenueCents: number;
+  expensesCents: number;
+  profitCents: number;
+  topServices: { name: string; count: number }[];
+};
 type Billing = { plan: string; expiresAt: string; active: boolean; paymentPending: boolean };
-type AdminTenant = { id: string; name: string; plan: string; isActive: boolean; createdAt: string; _count: { users: number; deposits: number } };
+type AdminTenant = {
+  id: string;
+  name: string;
+  plan: string;
+  isActive: boolean;
+  createdAt: string;
+  _count: { users: number; deposits: number };
+};
+type View = "overview" | "deposits" | "catalog" | "expenses" | "reports";
 
 const STATUS_LABELS: Record<string, string> = {
   RECEIVED: "Reçu",
-  IN_PROGRESS: "En cours",
+  IN_PROGRESS: "En traitement",
   READY: "Prêt",
   PICKED_UP: "Récupéré",
 };
-
 const STATUS_ORDER = ["RECEIVED", "IN_PROGRESS", "READY", "PICKED_UP"];
+const NAV_ITEMS: { id: View; label: string; icon: string }[] = [
+  { id: "overview", label: "Vue d'ensemble", icon: "⌂" },
+  { id: "deposits", label: "Dépôts", icon: "▤" },
+  { id: "catalog", label: "Catalogue", icon: "◇" },
+  { id: "expenses", label: "Dépenses", icon: "↗" },
+  { id: "reports", label: "Rapports", icon: "▥" },
+];
 
-function nextStatus(status: string): string | null {
-  const index = STATUS_ORDER.indexOf(status);
-  return index >= 0 && index < STATUS_ORDER.length - 1 ? STATUS_ORDER[index + 1] : null;
+function money(cents: number) {
+  return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(cents / 100);
 }
 
-async function request<T>(path: string, options: RequestInit = {}) {
-  const token = localStorage.getItem("pressing_admin_token")
-    ?? localStorage.getItem("pressing_token")
-    ?? sessionStorage.getItem("pressing_admin_token")
-    ?? sessionStorage.getItem("pressing_token");
-  const response = await fetch(`${API}${path}`, {
+function monthLabel(month: string) {
+  return new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric", timeZone: "UTC" })
+    .format(new Date(`${month}-01T00:00:00.000Z`));
+}
+
+function readToken(key: string) {
+  return localStorage.getItem(key) ?? sessionStorage.getItem(key);
+}
+
+function clearToken(key: string) {
+  localStorage.removeItem(key);
+  sessionStorage.removeItem(key);
+}
+
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const token = readToken("pressing_admin_token") ?? readToken("pressing_token");
+  const response = await fetch(`/api${path}`, {
     ...options,
-    headers: { "content-type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...options.headers },
+    headers: {
+      ...(options.body ? { "content-type": "application/json" } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options.headers,
+    },
   });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error ?? "Une erreur est survenue.");
+  const contentType = response.headers.get("content-type") ?? "";
+  const data: unknown = contentType.includes("application/json") ? await response.json() : null;
+  if (!response.ok) {
+    const message = data && typeof data === "object" && "error" in data
+      ? String(data.error)
+      : `La requête a échoué (${response.status}).`;
+    throw new Error(message);
+  }
   return data as T;
+}
+
+function ErrorNotice({ message, onClose }: { message: string; onClose: () => void }) {
+  if (!message) return null;
+  return <div className="notice notice-error" role="alert"><span>{message}</span><button className="icon-button" onClick={onClose} aria-label="Fermer">×</button></div>;
+}
+
+function PageHeading({ eyebrow, title, description }: { eyebrow: string; title: string; description?: string }) {
+  return <div className="page-heading"><p className="eyebrow">{eyebrow}</p><h1>{title}</h1>{description && <p className="muted">{description}</p>}</div>;
+}
+
+function StatCard({ label, value, detail, tone = "default" }: { label: string; value: string; detail: string; tone?: string }) {
+  return <article className={`stat-card stat-${tone}`}><p>{label}</p><strong>{value}</strong><span>{detail}</span></article>;
+}
+
+function DepositRow({ deposit, onAdvance, onTogglePaid }: {
+  deposit: Deposit;
+  onAdvance: (deposit: Deposit) => void;
+  onTogglePaid: (deposit: Deposit) => void;
+}) {
+  const next = STATUS_ORDER[STATUS_ORDER.indexOf(deposit.status) + 1];
+  return (
+    <tr>
+      <td><strong>{deposit.customerName}</strong><small>#{deposit.reference}</small></td>
+      <td>{deposit.customerPhone || "—"}</td>
+      <td><span className={`status status-${deposit.status.toLowerCase()}`}>{STATUS_LABELS[deposit.status] ?? deposit.status}</span></td>
+      <td>{money(deposit.priceCents)} FCFA</td>
+      <td><button className={`payment ${deposit.paid ? "payment-paid" : ""}`} onClick={() => onTogglePaid(deposit)}>{deposit.paid ? "Payé" : "À régler"}</button></td>
+      <td>{next ? <button className="button button-small button-secondary" onClick={() => onAdvance(deposit)}>Passer à « {STATUS_LABELS[next]} »</button> : <span className="muted">Terminé</span>}</td>
+    </tr>
+  );
 }
 
 export default function Home() {
   const [authenticated, setAuthenticated] = useState(false);
+  const [adminAuthenticated, setAdminAuthenticated] = useState(false);
   const [register, setRegister] = useState(true);
+  const [adminMode, setAdminMode] = useState(false);
+  const [forgotMode, setForgotMode] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [tenantName, setTenantName] = useState("");
+  const [adminEmail, setAdminEmail] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+  const [resetToken, setResetToken] = useState("");
+  const [resetPassword, setResetPassword] = useState("");
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [view, setView] = useState<View>("overview");
+  const [services, setServices] = useState<Service[]>([]);
+  const [deposits, setDeposits] = useState<Deposit[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [report, setReport] = useState<Report | null>(null);
+  const [billing, setBilling] = useState<Billing | null>(null);
+  const [tenants, setTenants] = useState<AdminTenant[]>([]);
+  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [serviceName, setServiceName] = useState("");
-  const [price, setPrice] = useState("");
-  const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
-  const [editingServiceName, setEditingServiceName] = useState("");
-  const [editingServicePrice, setEditingServicePrice] = useState("");
+  const [servicePrice, setServicePrice] = useState("");
+  const [editingService, setEditingService] = useState<Service | null>(null);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [depositServiceId, setDepositServiceId] = useState("");
@@ -56,225 +155,395 @@ export default function Home() {
   const [paid, setPaid] = useState(false);
   const [expenseLabel, setExpenseLabel] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
-  const [report, setReport] = useState<Report>({ revenueCents: 0, expensesCents: 0, profitCents: 0 });
-  const [billing, setBilling] = useState<Billing | null>(null);
-  const [services, setServices] = useState<Service[]>([]);
-  const [deposits, setDeposits] = useState<Deposit[]>([]);
-  const [error, setError] = useState("");
-  const [adminMode, setAdminMode] = useState(false);
-  const [adminAuthenticated, setAdminAuthenticated] = useState(false);
-  const [adminEmail, setAdminEmail] = useState("");
-  const [adminPassword, setAdminPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [showAdminPassword, setShowAdminPassword] = useState(false);
-  const [forgotMode, setForgotMode] = useState(false);
-  const [resetToken, setResetToken] = useState("");
-  const [resetPassword, setResetPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(false);
-  const [tenants, setTenants] = useState<AdminTenant[]>([]);
 
-  async function refresh() {
-    const [catalog, list, monthly, billingStatus] = await Promise.all([request<Service[]>("/catalog"), request<Deposit[]>("/deposits"), request<Report>("/reports/monthly"), request<Billing>("/billing/status")]);
+  const refreshBusiness = useCallback(async (selectedMonth = month) => {
+    const query = new URLSearchParams({ month: selectedMonth });
+    const [catalog, depositList, expenseList, monthlyReport, billingStatus] = await Promise.all([
+      request<Service[]>("/catalog"),
+      request<Deposit[]>("/deposits"),
+      request<Expense[]>("/expenses"),
+      request<Report>(`/reports/monthly?${query}`),
+      request<Billing>("/billing/status"),
+    ]);
     setServices(catalog);
-    setDeposits(list);
-    setReport(monthly);
+    setDeposits(depositList);
+    setExpenses(expenseList);
+    setReport(monthlyReport);
     setBilling(billingStatus);
-  }
+  }, [month]);
 
-  async function refreshTenants() {
-    const list = await request<AdminTenant[]>("/admin/tenants");
-    setTenants(list);
-  }
+  const refreshTenants = useCallback(async () => {
+    setTenants(await request<AdminTenant[]>("/admin/tenants"));
+  }, []);
 
   useEffect(() => {
-    const token = new URLSearchParams(window.location.search).get("token");
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token");
     if (token) {
       setResetToken(token);
       setForgotMode(true);
     }
-    const adminToken = localStorage.getItem("pressing_admin_token") ?? sessionStorage.getItem("pressing_admin_token");
-    if (adminToken) {
+    if (readToken("pressing_admin_token")) {
       setAuthenticated(true);
       setAdminAuthenticated(true);
-      setAdminMode(true);
-      refreshTenants().catch(() => {
-        localStorage.removeItem("pressing_admin_token");
-        sessionStorage.removeItem("pressing_admin_token");
+      refreshTenants().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "Chargement administrateur impossible."));
+    } else if (readToken("pressing_token")) {
+      setAuthenticated(true);
+      refreshBusiness().catch((cause: unknown) => {
+        clearToken("pressing_token");
         setAuthenticated(false);
-        setAdminAuthenticated(false);
-        setAdminMode(false);
-      });
-      return;
-    }
-    if (localStorage.getItem("pressing_token") ?? sessionStorage.getItem("pressing_token")) {
-      setAuthenticated(true);
-      refresh().catch(() => {
-        localStorage.removeItem("pressing_token");
-        sessionStorage.removeItem("pressing_token");
-        setAuthenticated(false);
+        setError(cause instanceof Error ? cause.message : "Chargement de l'espace impossible.");
       });
     }
-  }, []);
+  }, [refreshBusiness, refreshTenants]);
 
-  async function authenticate(event: FormEvent) {
-    event.preventDefault();
-    setError("");
-    try {
-      const result = await request<{ token: string }>(`/auth/${register ? "register" : "login"}`, { method: "POST", body: JSON.stringify({ email, password, tenantName }) });
-      localStorage.removeItem("pressing_admin_token");
-      sessionStorage.removeItem("pressing_admin_token");
-      const storage = rememberMe ? localStorage : sessionStorage;
-      storage.setItem("pressing_token", result.token);
-      setAuthenticated(true);
-      await refresh();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Action impossible."); }
+  const openDeposits = deposits.filter((deposit) => deposit.status !== "PICKED_UP").length;
+  const readyDeposits = deposits.filter((deposit) => deposit.status === "READY").length;
+
+  function storeToken(key: string, token: string) {
+    clearToken(key === "pressing_token" ? "pressing_admin_token" : "pressing_token");
+    (rememberMe ? localStorage : sessionStorage).setItem(key, token);
   }
 
-  async function authenticateAdmin(event: FormEvent) {
+  async function authenticate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+    setLoading(true);
     try {
-      const result = await request<{ token: string }>("/admin/login", {
-        method: "POST",
-        body: JSON.stringify({ email: adminEmail, password: adminPassword }),
-      });
-      localStorage.removeItem("pressing_token");
-      sessionStorage.removeItem("pressing_token");
-      const storage = rememberMe ? localStorage : sessionStorage;
-      storage.setItem("pressing_admin_token", result.token);
-      setAuthenticated(true);
-      setAdminAuthenticated(true);
-      await refreshTenants();
+      if (adminMode) {
+        const result = await request<{ token: string }>("/admin/login", {
+          method: "POST",
+          body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+        });
+        storeToken("pressing_admin_token", result.token);
+        setAuthenticated(true);
+        setAdminAuthenticated(true);
+        await refreshTenants();
+      } else {
+        const result = await request<{ token: string }>(`/auth/${register ? "register" : "login"}`, {
+          method: "POST",
+          body: JSON.stringify({ email, password, tenantName }),
+        });
+        storeToken("pressing_token", result.token);
+        setAuthenticated(true);
+        await refreshBusiness();
+      }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Connexion administrateur impossible.");
-    }
-
-  }
-
-  async function requestPasswordReset(event: FormEvent) {
-    event.preventDefault();
-    setError("");
-    try {
-      const result = await request<{ message: string; developmentResetToken?: string }>("/auth/forgot-password", {
-        method: "POST",
-        body: JSON.stringify({ email }),
-      });
-      setError(result.developmentResetToken
-        ? `Mode développement : utilisez ce jeton dans l'URL ?token=${result.developmentResetToken}`
-        : result.message);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Demande impossible.");
+      setError(cause instanceof Error ? cause.message : "Connexion impossible.");
+    } finally {
+      setLoading(false);
     }
   }
 
-  async function resetAccountPassword(event: FormEvent) {
+  async function submitRecovery(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+    setMessage("");
+    setLoading(true);
     try {
-      const result = await request<{ message: string }>("/auth/reset-password", {
-        method: "POST",
-        body: JSON.stringify({ token: resetToken, password: resetPassword }),
-      });
-      setError(result.message);
-      setForgotMode(false);
-      setResetToken("");
-      setResetPassword("");
+      if (resetToken) {
+        const result = await request<{ message: string }>("/auth/reset-password", {
+          method: "POST",
+          body: JSON.stringify({ token: resetToken, password: resetPassword }),
+        });
+        setMessage(result.message);
+        setResetToken("");
+        setResetPassword("");
+        setForgotMode(false);
+      } else {
+        const result = await request<{ message: string; developmentResetToken?: string }>("/auth/forgot-password", {
+          method: "POST",
+          body: JSON.stringify({ email }),
+        });
+        setMessage(result.developmentResetToken
+          ? `Mode développement — jeton de réinitialisation : ${result.developmentResetToken}`
+          : result.message);
+      }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Réinitialisation impossible.");
+      setError(cause instanceof Error ? cause.message : "La demande de récupération a échoué.");
+    } finally {
+      setLoading(false);
     }
+  }
+
+  async function runAction(action: () => Promise<void>) {
+    setError("");
+    setMessage("");
+    setLoading(true);
+    try {
+      await action();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "L'action n'a pas pu aboutir.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveService(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await runAction(async () => {
+      const body = JSON.stringify({ name: serviceName.trim(), priceCents: Math.round(Number(servicePrice) * 100) });
+      await request(editingService ? `/catalog/${editingService.id}` : "/catalog", {
+        method: editingService ? "PATCH" : "POST",
+        body,
+      });
+      setServiceName("");
+      setServicePrice("");
+      setEditingService(null);
+      await refreshBusiness();
+    });
+  }
+
+  async function createDeposit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await runAction(async () => {
+      await request("/deposits", {
+        method: "POST",
+        body: JSON.stringify({
+          customerName: customerName.trim(),
+          customerPhone: customerPhone.trim(),
+          serviceId: depositServiceId || undefined,
+          pickupAt: pickupAt || undefined,
+          locker: locker.trim(),
+          paid,
+        }),
+      });
+      setCustomerName("");
+      setCustomerPhone("");
+      setDepositServiceId("");
+      setPickupAt("");
+      setLocker("");
+      setPaid(false);
+      await refreshBusiness();
+    });
+  }
+
+  async function createExpense(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await runAction(async () => {
+      await request("/expenses", {
+        method: "POST",
+        body: JSON.stringify({ label: expenseLabel.trim(), amountCents: Math.round(Number(expenseAmount) * 100) }),
+      });
+      setExpenseLabel("");
+      setExpenseAmount("");
+      await refreshBusiness();
+    });
+  }
+
+  async function updateDeposit(deposit: Deposit, changes: { status?: string; paid?: boolean }) {
+    await runAction(async () => {
+      await request(`/deposits/${deposit.id}`, { method: "PATCH", body: JSON.stringify(changes) });
+      await refreshBusiness();
+    });
+  }
+
+  async function signOut() {
+    clearToken("pressing_token");
+    clearToken("pressing_admin_token");
+    setAuthenticated(false);
+    setAdminAuthenticated(false);
+    setAdminMode(false);
+    setError("");
+    setMessage("");
   }
 
   async function updateTenant(tenant: AdminTenant) {
-    await request(`/admin/tenants/${tenant.id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ isActive: !tenant.isActive }),
-    });
-    await refreshTenants();
-  }
-
-  async function deleteTenant(tenant: AdminTenant) {
-    if (!window.confirm(`Supprimer définitivement ${tenant.name} et toutes ses données ?`)) return;
-    await request(`/admin/tenants/${tenant.id}`, { method: "DELETE" });
-    await refreshTenants();
-  }
-
-  async function createService(event: FormEvent) {
-    event.preventDefault();
-    try {
-      await request("/catalog", { method: "POST", body: JSON.stringify({ name: serviceName, priceCents: Number(price) * 100 }) });
-      setServiceName(""); setPrice(""); await refresh();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Article impossible à créer."); }
-  }
-
-  function startEditService(service: Service) {
-    setEditingServiceId(service.id);
-    setEditingServiceName(service.name);
-    setEditingServicePrice(String(service.priceCents / 100));
-  }
-
-  async function saveService(event: FormEvent) {
-    event.preventDefault();
-    if (!editingServiceId) return;
-    try {
-      await request(`/catalog/${editingServiceId}`, {
+    await runAction(async () => {
+      await request(`/admin/tenants/${tenant.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ name: editingServiceName, priceCents: Number(editingServicePrice) * 100 }),
+        body: JSON.stringify({ isActive: !tenant.isActive }),
       });
-      setEditingServiceId(null);
-      await refresh();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Modification impossible."); }
+      await refreshTenants();
+    });
   }
 
-  async function removeService(service: Service) {
-    if (!window.confirm(`Supprimer l'article "${service.name}" ?`)) return;
-    try {
-      await request(`/catalog/${service.id}`, { method: "DELETE" });
-      await refresh();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Suppression impossible."); }
-  }
-
-  async function createDeposit(event: FormEvent) {
-    event.preventDefault();
-    try {
-      await request("/deposits", { method: "POST", body: JSON.stringify({ customerName, customerPhone, serviceId: depositServiceId || undefined, pickupAt: pickupAt || undefined, locker, paid }) });
-      setCustomerName(""); setCustomerPhone(""); setDepositServiceId(""); setPickupAt(""); setLocker(""); setPaid(false); await refresh();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Dépôt impossible à créer."); }
-  }
-
-  async function advanceDeposit(deposit: Deposit) {
-    const next = nextStatus(deposit.status);
-    if (!next) return;
-    try {
-      await request(`/deposits/${deposit.id}`, { method: "PATCH", body: JSON.stringify({ status: next }) });
-      await refresh();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Mise à jour impossible."); }
-  }
-
-  async function toggleDepositPaid(deposit: Deposit) {
-    try {
-      await request(`/deposits/${deposit.id}`, { method: "PATCH", body: JSON.stringify({ paid: !deposit.paid }) });
-      await refresh();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Mise à jour impossible."); }
-  }
-
-  async function createExpense(event: FormEvent) {
-    event.preventDefault();
-    try {
-      await request("/expenses", { method: "POST", body: JSON.stringify({ label: expenseLabel, amountCents: Number(expenseAmount) * 100 }) });
-      setExpenseLabel(""); setExpenseAmount(""); await refresh();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Dépense impossible à créer."); }
+  async function removeTenant(tenant: AdminTenant) {
+    if (!window.confirm(`Supprimer définitivement ${tenant.name} et toutes ses données ?`)) return;
+    await runAction(async () => {
+      await request(`/admin/tenants/${tenant.id}`, { method: "DELETE" });
+      await refreshTenants();
+    });
   }
 
   if (!authenticated) {
-    if (forgotMode) {
-      return <main className="auth"><section className="hero"><small>PRESSING OS</small><h1>Récupérez votre accès.</h1><p>Votre mot de passe n'est jamais affiché ni stocké en clair.</p></section><section className="card"><small>SÉCURITÉ</small><h2>{resetToken ? "Nouveau mot de passe" : "Mot de passe oublié"}</h2><p className="muted">{resetToken ? "Choisissez un nouveau mot de passe sécurisé." : "Saisissez votre email pour recevoir un lien."}</p><form onSubmit={resetToken ? resetAccountPassword : requestPasswordReset}>{!resetToken ? <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email professionnel" required /> : <input type="password" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} placeholder="Nouveau mot de passe (8 caractères minimum)" minLength={8} required />}{error && <p className="error">{error}</p>}<button type="submit">{resetToken ? "Réinitialiser" : "Recevoir le lien"}</button></form><button className="link" onClick={() => { setForgotMode(false); setError(""); }}>Retour à la connexion</button></section></main>;
-    }
-    return <main className="auth"><section className="hero"><small>PRESSING OS</small><h1>Votre pressing, enfin maîtrisé.</h1><p>Articles, dépôts et activité réunis dans un espace simple.</p></section><section className="card"><small>{adminMode ? "ADMINISTRATION PLATEFORME" : "ESPACE PROFESSIONNEL"}</small><h2>{adminMode ? "Administration" : register ? "Créer votre boutique" : "Bon retour"}</h2><p className="muted">{adminMode ? "Gérez les boutiques et les comptes." : register ? "10 jours d'essai gratuit." : "Connectez-vous à votre espace."}</p><form onSubmit={adminMode ? authenticateAdmin : authenticate}>{adminMode ? <><input type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} placeholder="Email administrateur" required /><div className="password-field"><input type={showAdminPassword ? "text" : "password"} value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} placeholder="Mot de passe administrateur" required /><button type="button" className="password-toggle" onClick={() => setShowAdminPassword(!showAdminPassword)} aria-label={showAdminPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}>{showAdminPassword ? "Masquer" : "Voir"}</button></div></> : <>{register && <input value={tenantName} onChange={(e) => setTenantName(e.target.value)} placeholder="Nom du pressing" required />}<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email professionnel" required /><div className="password-field"><input type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mot de passe (8 caractères minimum)" minLength={8} required /><button type="button" className="password-toggle" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}>{showPassword ? "Masquer" : "Voir"}</button></div></>}<label className="check"><input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} /> Se souvenir de moi</label>{error && <p className="error">{error}</p>}<button type="submit">{adminMode ? "Ouvrir l'administration" : register ? "Démarrer l'essai" : "Se connecter"}</button></form>{!adminMode && <button className="link" onClick={() => { setRegister(!register); setError(""); }}>{register ? "J'ai déjà un compte" : "Créer un compte"}</button>}{!adminMode && !register && <button className="link" onClick={() => { setForgotMode(true); setError(""); }}>Mot de passe oublié ?</button>}<button className="link" onClick={() => { setAdminMode(!adminMode); setError(""); }}>{adminMode ? "Retour à l'espace pressing" : "Accès administrateur"}</button></section></main>;
+    return (
+      <main className="auth-shell">
+        <section className="auth-intro">
+          <a className="brand brand-light" href="/" aria-label="Pressing OS, accueil"><span className="brand-mark">P</span> pressing<span>OS</span></a>
+          <div className="auth-pitch">
+            <p className="eyebrow eyebrow-light">LE QUOTIDIEN DU PRESSING, SIMPLIFIÉ</p>
+            <h1>Un atelier bien organisé. Des clients bien servis.</h1>
+            <p>Suivez chaque dépôt, maîtrisez votre catalogue et gardez un œil clair sur votre activité.</p>
+            <div className="auth-points"><span>✓ Suivi des commandes</span><span>✓ Comptes et dépenses</span><span>✓ Rapports mensuels</span></div>
+          </div>
+          <p className="auth-footnote">Une solution pensée pour les professionnels du pressing.</p>
+        </section>
+        <section className="auth-panel">
+          <div className="auth-card">
+            <p className="eyebrow">{forgotMode ? "RÉCUPÉRATION DU COMPTE" : adminMode ? "ESPACE ADMINISTRATEUR" : "ESPACE PROFESSIONNEL"}</p>
+            <h2>{forgotMode ? (resetToken ? "Choisir un nouveau mot de passe" : "Mot de passe oublié ?") : adminMode ? "Administration" : register ? "Créer votre espace" : "Ravi de vous revoir"}</h2>
+            <p className="muted">{forgotMode ? "Suivez les étapes pour retrouver l'accès à votre compte." : adminMode ? "Connectez-vous pour superviser les boutiques." : register ? "Commencez avec votre essai gratuit de 10 jours." : "Connectez-vous pour retrouver votre activité."}</p>
+            <ErrorNotice message={error} onClose={() => setError("")} />
+            {message && <div className="notice notice-success" role="status">{message}</div>}
+            <form className="form-stack" onSubmit={forgotMode ? submitRecovery : authenticate}>
+              {forgotMode ? resetToken ? (
+                <label>Nouveau mot de passe<input type="password" value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} minLength={8} autoComplete="new-password" required /></label>
+              ) : (
+                <label>Adresse e-mail<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /></label>
+              ) : adminMode ? (
+                <>
+                  <label>E-mail administrateur<input type="email" value={adminEmail} onChange={(event) => setAdminEmail(event.target.value)} autoComplete="username" required /></label>
+                  <label>Mot de passe<input type="password" value={adminPassword} onChange={(event) => setAdminPassword(event.target.value)} autoComplete="current-password" required /></label>
+                </>
+              ) : (
+                <>
+                  {register && <label>Nom du pressing<input value={tenantName} onChange={(event) => setTenantName(event.target.value)} autoComplete="organization" required /></label>}
+                  <label>Adresse e-mail<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /></label>
+                  <label>Mot de passe<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} autoComplete={register ? "new-password" : "current-password"} required /></label>
+                  <label className="check-row"><input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} /> Rester connecté</label>
+                </>
+              )}
+              <button className="button button-primary button-full" disabled={loading}>{loading ? "Veuillez patienter…" : forgotMode ? resetToken ? "Enregistrer le mot de passe" : "Envoyer les instructions" : adminMode ? "Se connecter" : register ? "Créer mon espace" : "Se connecter"}</button>
+            </form>
+            <div className="auth-links">
+              {forgotMode ? <button className="text-button" onClick={() => { setForgotMode(false); setMessage(""); setError(""); }}>Retour à la connexion</button> : <>
+                {!adminMode && <button className="text-button" onClick={() => { setRegister(!register); setError(""); }}>{register ? "J'ai déjà un compte" : "Créer un compte"}</button>}
+                {!adminMode && !register && <button className="text-button" onClick={() => { setForgotMode(true); setError(""); }}>Mot de passe oublié ?</button>}
+                <button className="text-button" onClick={() => { setAdminMode(!adminMode); setError(""); }}>{adminMode ? "Retour à mon pressing" : "Administration plateforme"}</button>
+              </>}
+            </div>
+          </div>
+        </section>
+      </main>
+    );
   }
 
   if (adminAuthenticated) {
-    return <main className="dashboard"><header><div><small>PRESSING OS · ADMIN</small><h1>Gestion des boutiques</h1></div><button className="secondary" onClick={() => { localStorage.removeItem("pressing_admin_token"); sessionStorage.removeItem("pressing_admin_token"); localStorage.removeItem("pressing_token"); sessionStorage.removeItem("pressing_token"); setAdminAuthenticated(false); setAdminMode(false); setAuthenticated(false); }}>Se déconnecter</button></header>{error && <p className="error">{error}</p>}<section className="stats"><div><span>Boutiques</span><strong>{tenants.length}</strong></div><div><span>Utilisateurs</span><strong>{tenants.reduce((total, tenant) => total + tenant._count.users, 0)}</strong></div><div><span>Dépôts</span><strong>{tenants.reduce((total, tenant) => total + tenant._count.deposits, 0)}</strong></div></section><section className="panel admin-list"><small>SUPERVISION</small><h2>Comptes clients</h2>{tenants.map((tenant) => <div className="admin-row" key={tenant.id}><div><strong>{tenant.name}</strong><small>{tenant._count.users} utilisateur(s) · {tenant._count.deposits} dépôt(s) · {tenant.plan}</small></div><span className={tenant.isActive ? "badge active-badge" : "badge"}>{tenant.isActive ? "Actif" : "Suspendu"}</span><button className="secondary" onClick={() => updateTenant(tenant)}>{tenant.isActive ? "Suspendre" : "Réactiver"}</button><button className="danger" onClick={() => deleteTenant(tenant)}>Supprimer</button></div>)}{tenants.length === 0 && <p className="muted">Aucune boutique enregistrée.</p>}</section></main>;
+    const totalUsers = tenants.reduce((total, tenant) => total + tenant._count.users, 0);
+    const totalOrders = tenants.reduce((total, tenant) => total + tenant._count.deposits, 0);
+    return (
+      <main className="admin-shell">
+        <header className="admin-topbar"><a className="brand" href="/"><span className="brand-mark">P</span> pressing<span>OS</span></a><span className="admin-chip">Administration plateforme</span><button className="button button-secondary" onClick={signOut}>Se déconnecter</button></header>
+        <section className="workspace admin-workspace">
+          <PageHeading eyebrow="SUPERVISION" title="Gestion des boutiques" description="Consultez et gérez les espaces inscrits sur la plateforme." />
+          <ErrorNotice message={error} onClose={() => setError("")} />
+          <div className="stats-grid">
+            <StatCard label="Boutiques" value={String(tenants.length)} detail="Espaces enregistrés" />
+            <StatCard label="Utilisateurs" value={String(totalUsers)} detail="Comptes associés" />
+            <StatCard label="Dépôts" value={String(totalOrders)} detail="Commandes enregistrées" />
+          </div>
+          <section className="content-card">
+            <div className="section-title"><div><p className="eyebrow">COMPTES CLIENTS</p><h2>Boutiques inscrites</h2></div><span className="count-pill">{tenants.length}</span></div>
+            {tenants.length ? <div className="table-wrap"><table><thead><tr><th>Boutique</th><th>Activité</th><th>Plan</th><th>État</th><th>Actions</th></tr></thead><tbody>{tenants.map((tenant) => <tr key={tenant.id}><td><strong>{tenant.name}</strong><small>{tenant._count.users} utilisateur(s) · {tenant._count.deposits} dépôt(s)</small></td><td>{new Date(tenant.createdAt).toLocaleDateString("fr-FR")}</td><td>{tenant.plan}</td><td><span className={`status ${tenant.isActive ? "status-ready" : "status-received"}`}>{tenant.isActive ? "Actif" : "Suspendu"}</span></td><td className="action-cell"><button className="button button-small button-secondary" onClick={() => updateTenant(tenant)}>{tenant.isActive ? "Suspendre" : "Réactiver"}</button><button className="button button-small button-danger" onClick={() => removeTenant(tenant)}>Supprimer</button></td></tr>)}</tbody></table></div> : <p className="empty-state">Aucune boutique enregistrée pour le moment.</p>}
+          </section>
+        </section>
+      </main>
+    );
   }
 
-  return <main className="dashboard"><header><div><small>PRESSING OS</small><h1>Tableau de bord</h1></div><button className="secondary" onClick={() => { localStorage.removeItem("pressing_token"); sessionStorage.removeItem("pressing_token"); setAuthenticated(false); }}>Se déconnecter</button></header>{error && <p className="error">{error}</p>}{billing && <p className="success">{billing.plan === "TRIAL" ? `Essai gratuit actif jusqu'au ${new Date(billing.expiresAt).toLocaleDateString("fr-FR")}.` : `Plan ${billing.plan} actif.`}</p>}<section className="stats"><div><span>Chiffre d'affaires</span><strong>{report.revenueCents / 100} FCFA</strong></div><div><span>Dépenses</span><strong>{report.expensesCents / 100} FCFA</strong></div><div><span>Bénéfice</span><strong className="active">{report.profitCents / 100} FCFA</strong></div></section><section className="columns"><article className="panel"><small>CATALOGUE</small><h2>Articles & services</h2><form className="row" onSubmit={createService}><input value={serviceName} onChange={(e) => setServiceName(e.target.value)} placeholder="Nom de l'article" required /><input type="number" min="0" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="Prix FCFA" required /><button>Ajouter</button></form>{services.map((service) => editingServiceId === service.id ? <form className="row" key={service.id} onSubmit={saveService}><input value={editingServiceName} onChange={(e) => setEditingServiceName(e.target.value)} required /><input type="number" min="0" value={editingServicePrice} onChange={(e) => setEditingServicePrice(e.target.value)} required /><button>Enregistrer</button><button type="button" className="link" onClick={() => setEditingServiceId(null)}>Annuler</button></form> : <div className="item" key={service.id}><span>{service.name}</span><b>{service.priceCents / 100} FCFA</b><button className="secondary" onClick={() => startEditService(service)}>Modifier</button><button className="danger" onClick={() => removeService(service)}>Supprimer</button></div>)}</article><article className="panel"><small>DÉPÔTS</small><h2>Nouveau dépôt</h2><form onSubmit={createDeposit}><input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Nom du client" required /><input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Téléphone du client" /><select value={depositServiceId} onChange={(e) => setDepositServiceId(e.target.value)}><option value="">Choisir un article</option>{services.map((service) => <option key={service.id} value={service.id}>{service.name} - {service.priceCents / 100} FCFA</option>)}</select><input type="datetime-local" value={pickupAt} onChange={(e) => setPickupAt(e.target.value)} /><input value={locker} onChange={(e) => setLocker(e.target.value)} placeholder="Casier (ex. A1)" /><label className="check"><input type="checkbox" checked={paid} onChange={(e) => setPaid(e.target.checked)} /> Client déjà payé</label><button>Enregistrer le dépôt</button></form>{deposits.map((deposit) => <div className="item" key={deposit.id}><span>{deposit.customerName}<small>{deposit.reference} · {STATUS_LABELS[deposit.status] ?? deposit.status} · {deposit.paid ? "Payé" : "À payer"}{deposit.locker ? ` · Casier ${deposit.locker}` : ""}</small></span><b>{deposit.priceCents / 100} FCFA</b>{nextStatus(deposit.status) && <button className="secondary" onClick={() => advanceDeposit(deposit)}>{STATUS_LABELS[nextStatus(deposit.status)!]}</button>}<button className="secondary" onClick={() => toggleDepositPaid(deposit)}>{deposit.paid ? "Marquer à payer" : "Marquer payé"}</button></div>)}</article><article className="panel"><small>GESTION</small><h2>Dépenses du mois</h2><form className="row" onSubmit={createExpense}><input value={expenseLabel} onChange={(e) => setExpenseLabel(e.target.value)} placeholder="Libellé" required /><input type="number" min="1" value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} placeholder="Montant FCFA" required /><button>Ajouter</button></form></article></section></main>;
+  const heading: Record<View, { eyebrow: string; title: string; description: string }> = {
+    overview: { eyebrow: "VOTRE ACTIVITÉ", title: "Vue d'ensemble", description: "Retrouvez en un coup d'œil l'essentiel de votre pressing." },
+    deposits: { eyebrow: "SUIVI DES COMMANDES", title: "Dépôts", description: "Enregistrez les vêtements confiés et suivez leur avancement." },
+    catalog: { eyebrow: "VOS PRESTATIONS", title: "Catalogue", description: "Gérez les services et tarifs proposés à vos clients." },
+    expenses: { eyebrow: "SUIVI FINANCIER", title: "Dépenses", description: "Enregistrez vos frais pour suivre la rentabilité de l'activité." },
+    reports: { eyebrow: "ANALYSE", title: "Rapports mensuels", description: "Comparez les recettes et dépenses de votre pressing." },
+  };
+
+  return (
+    <main className="app-shell">
+      <aside className="sidebar">
+        <a className="brand brand-light" href="/"><span className="brand-mark">P</span> pressing<span>OS</span></a>
+        <div className="workspace-label">ESPACE DE TRAVAIL</div>
+        <nav className="side-nav" aria-label="Navigation principale">
+          {NAV_ITEMS.map((item) => <button key={item.id} className={`nav-item ${view === item.id ? "nav-item-active" : ""}`} onClick={() => { setView(item.id); setError(""); }}><span className="nav-icon">{item.icon}</span>{item.label}{item.id === "deposits" && openDeposits > 0 && <span className="nav-count">{openDeposits}</span>}</button>)}
+        </nav>
+        <div className="sidebar-bottom">
+          {billing && <div className="trial-card"><span className="trial-icon">✦</span><strong>{billing.plan === "TRIAL" ? "Période d'essai" : `Offre ${billing.plan}`}</strong><p>{billing.plan === "TRIAL" ? `Jusqu'au ${new Date(billing.expiresAt).toLocaleDateString("fr-FR")}` : "Votre espace est actif"}</p></div>}
+          <div className="profile-row"><span className="avatar">{(email || "P").charAt(0).toUpperCase()}</span><div><strong>Mon pressing</strong><small>{email}</small></div><button className="icon-button light-icon" onClick={signOut} aria-label="Se déconnecter" title="Se déconnecter">↗</button></div>
+        </div>
+      </aside>
+      <section className="main-area">
+        <header className="topbar"><span className="topbar-caption">Espace professionnel</span><div className="topbar-actions"><span className="today-label">{new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}</span><span className="avatar avatar-small">{(email || "P").charAt(0).toUpperCase()}</span></div></header>
+        <div className="workspace">
+          <PageHeading {...heading[view]} />
+          <ErrorNotice message={error} onClose={() => setError("")} />
+          {message && <div className="notice notice-success" role="status">{message}</div>}
+
+          {view === "overview" && <>
+            <div className="stats-grid">
+              <StatCard label="Chiffre d'affaires" value={`${money(report?.revenueCents ?? 0)} FCFA`} detail={monthLabel(month)} />
+              <StatCard label="Dépenses" value={`${money(report?.expensesCents ?? 0)} FCFA`} detail={monthLabel(month)} tone="warm" />
+              <StatCard label="Résultat net" value={`${money(report?.profitCents ?? 0)} FCFA`} detail="Recettes moins dépenses" tone="green" />
+              <StatCard label="Commandes en cours" value={String(openDeposits)} detail={`${readyDeposits} prête(s) au retrait`} tone="blue" />
+            </div>
+            <div className="overview-grid">
+              <section className="content-card">
+                <div className="section-title"><div><p className="eyebrow">DERNIÈRES COMMANDES</p><h2>Suivi des dépôts</h2></div><button className="text-button" onClick={() => setView("deposits")}>Voir tout →</button></div>
+                {deposits.length ? <div className="table-wrap"><table><thead><tr><th>Client</th><th>État</th><th>Montant</th><th>Paiement</th></tr></thead><tbody>{deposits.slice(0, 5).map((deposit) => <tr key={deposit.id}><td><strong>{deposit.customerName}</strong><small>#{deposit.reference}</small></td><td><span className={`status status-${deposit.status.toLowerCase()}`}>{STATUS_LABELS[deposit.status] ?? deposit.status}</span></td><td>{money(deposit.priceCents)} FCFA</td><td>{deposit.paid ? <span className="paid-label">Payé</span> : <span className="due-label">À régler</span>}</td></tr>)}</tbody></table></div> : <p className="empty-state">Vos nouveaux dépôts apparaîtront ici.</p>}
+              </section>
+              <section className="content-card">
+                <div className="section-title"><div><p className="eyebrow">RÉSUMÉ DU MOIS</p><h2>{monthLabel(month)}</h2></div><button className="button button-small button-secondary" onClick={() => setView("reports")}>Rapport</button></div>
+                <div className="summary-list"><div><span>Prestations enregistrées</span><strong>{report?.topServices.reduce((sum, service) => sum + service.count, 0) ?? 0}</strong></div><div><span>Commandes à retirer</span><strong>{readyDeposits}</strong></div><div><span>Services au catalogue</span><strong>{services.length}</strong></div></div>
+                {billing?.paymentPending && <p className="trial-note">Votre période d'essai se termine le {new Date(billing.expiresAt).toLocaleDateString("fr-FR")}.</p>}
+              </section>
+            </div>
+          </>}
+
+          {view === "deposits" && <div className="page-grid">
+            <section className="content-card form-card">
+              <div className="section-title"><div><p className="eyebrow">NOUVELLE COMMANDE</p><h2>Enregistrer un dépôt</h2></div></div>
+              <form className="form-stack" onSubmit={createDeposit}>
+                <label>Nom du client<input value={customerName} onChange={(event) => setCustomerName(event.target.value)} required /></label>
+                <label>Téléphone <span className="optional">Facultatif</span><input type="tel" value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} /></label>
+                <label>Prestation<select value={depositServiceId} onChange={(event) => setDepositServiceId(event.target.value)}><option value="">Choisir un service</option>{services.map((service) => <option key={service.id} value={service.id}>{service.name} · {money(service.priceCents)} FCFA</option>)}</select></label>
+                <label>Date de retrait <span className="optional">Facultatif</span><input type="datetime-local" value={pickupAt} onChange={(event) => setPickupAt(event.target.value)} /></label>
+                <label>Casier / repère <span className="optional">Facultatif</span><input value={locker} onChange={(event) => setLocker(event.target.value)} /></label>
+                <label className="check-row"><input type="checkbox" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> Paiement reçu</label>
+                <button className="button button-primary" disabled={loading}>Enregistrer le dépôt</button>
+              </form>
+            </section>
+            <section className="content-card">
+              <div className="section-title"><div><p className="eyebrow">ATELIER</p><h2>Tous les dépôts</h2></div><span className="count-pill">{deposits.length}</span></div>
+              {deposits.length ? <div className="table-wrap"><table><thead><tr><th>Client</th><th>Téléphone</th><th>État</th><th>Montant</th><th>Paiement</th><th>Action</th></tr></thead><tbody>{deposits.map((deposit) => <DepositRow key={deposit.id} deposit={deposit} onAdvance={(item) => updateDeposit(item, { status: STATUS_ORDER[STATUS_ORDER.indexOf(item.status) + 1] })} onTogglePaid={(item) => updateDeposit(item, { paid: !item.paid })} />)}</tbody></table></div> : <p className="empty-state">Aucun dépôt pour le moment. Enregistrez la première commande.</p>}
+            </section>
+          </div>}
+
+          {view === "catalog" && <section className="content-card">
+            <div className="section-title"><div><p className="eyebrow">OFFRE DE SERVICES</p><h2>Prestations et tarifs</h2></div><span className="count-pill">{services.length} service(s)</span></div>
+            <form className="inline-form" onSubmit={saveService}>
+              <label>Nom du service<input value={serviceName} onChange={(event) => setServiceName(event.target.value)} placeholder="Ex. Lavage et repassage" required /></label>
+              <label>Prix (FCFA)<input type="number" min="0" step="1" value={servicePrice} onChange={(event) => setServicePrice(event.target.value)} placeholder="Ex. 2500" required /></label>
+              <button className="button button-primary" disabled={loading}>{editingService ? "Enregistrer" : "Ajouter au catalogue"}</button>
+              {editingService && <button type="button" className="button button-secondary" onClick={() => { setEditingService(null); setServiceName(""); setServicePrice(""); }}>Annuler</button>}
+            </form>
+            <div className="service-grid">{services.map((service) => <article className="service-card" key={service.id}><div className="service-mark">◇</div><div className="service-info"><strong>{service.name}</strong><span>{money(service.priceCents)} FCFA</span></div><div className="service-actions"><button className="icon-button" title="Modifier" aria-label={`Modifier ${service.name}`} onClick={() => { setEditingService(service); setServiceName(service.name); setServicePrice(String(service.priceCents / 100)); }}>✎</button><button className="icon-button icon-danger" title="Supprimer" aria-label={`Supprimer ${service.name}`} onClick={() => runAction(async () => { if (!window.confirm(`Supprimer le service « ${service.name} » ?`)) return; await request(`/catalog/${service.id}`, { method: "DELETE" }); await refreshBusiness(); })}>×</button></div></article>)}</div>
+            {!services.length && <p className="empty-state">Ajoutez vos prestations pour accélérer l'enregistrement des dépôts.</p>}
+          </section>}
+
+          {view === "expenses" && <div className="page-grid">
+            <section className="content-card form-card">
+              <div className="section-title"><div><p className="eyebrow">NOUVELLE ÉCRITURE</p><h2>Ajouter une dépense</h2></div></div>
+              <form className="form-stack" onSubmit={createExpense}>
+                <label>Libellé<input value={expenseLabel} onChange={(event) => setExpenseLabel(event.target.value)} placeholder="Ex. Électricité" required /></label>
+                <label>Montant (FCFA)<input type="number" min="1" step="1" value={expenseAmount} onChange={(event) => setExpenseAmount(event.target.value)} required /></label>
+                <button className="button button-primary" disabled={loading}>Enregistrer la dépense</button>
+              </form>
+            </section>
+            <section className="content-card">
+              <div className="section-title"><div><p className="eyebrow">HISTORIQUE</p><h2>Dernières dépenses</h2></div></div>
+              {expenses.length ? <div className="table-wrap"><table><thead><tr><th>Dépense</th><th>Date</th><th>Montant</th></tr></thead><tbody>{expenses.map((expense) => <tr key={expense.id}><td><strong>{expense.label}</strong></td><td>{new Date(expense.incurredAt).toLocaleDateString("fr-FR")}</td><td className="amount-negative">− {money(expense.amountCents)} FCFA</td></tr>)}</tbody></table></div> : <p className="empty-state">Aucune dépense enregistrée.</p>}
+            </section>
+          </div>}
+
+          {view === "reports" && <section className="content-card report-card">
+            <div className="section-title"><div><p className="eyebrow">PERFORMANCE</p><h2>Rapport d'activité</h2></div><label className="month-picker">Période<input type="month" value={month} onChange={(event) => setMonth(event.target.value)} /></label></div>
+            <h3 className="report-month">{monthLabel(month)}</h3>
+            <div className="stats-grid report-stats"><StatCard label="Chiffre d'affaires" value={`${money(report?.revenueCents ?? 0)} FCFA`} detail="Dépôts enregistrés" /><StatCard label="Dépenses" value={`${money(report?.expensesCents ?? 0)} FCFA`} detail="Dépenses déclarées" tone="warm" /><StatCard label="Résultat net" value={`${money(report?.profitCents ?? 0)} FCFA`} detail="Chiffre d'affaires − dépenses" tone="green" /></div>
+            <div className="report-services"><div className="section-title"><div><p className="eyebrow">ACTIVITÉ</p><h2>Prestations les plus demandées</h2></div></div>{report?.topServices.length ? report.topServices.map((service, index) => <div className="popular-row" key={service.name}><span className="popular-rank">{String(index + 1).padStart(2, "0")}</span><strong>{service.name}</strong><span>{service.count} dépôt(s)</span></div>) : <p className="empty-state">Aucune prestation enregistrée pour ce mois.</p>}</div>
+          </section>}
+        </div>
+      </section>
+    </main>
+  );
 }
