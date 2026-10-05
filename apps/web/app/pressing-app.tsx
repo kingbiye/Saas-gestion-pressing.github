@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 type Service = { id: string; name: string; priceCents: number };
 type Deposit = {
@@ -174,6 +174,8 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   const [report, setReport] = useState<Report | null>(null);
   const [billing, setBilling] = useState<Billing | null>(null);
   const [shop, setShop] = useState<ShopSettings>({ name: "", logoDataUrl: null, colorTheme: "forest" });
+  const shopSettingsRevision = useRef(0);
+  const shopSettingsWrites = useRef(0);
   const [tenants, setTenants] = useState<AdminTenant[]>([]);
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [serviceName, setServiceName] = useState("");
@@ -189,6 +191,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   const [expenseAmount, setExpenseAmount] = useState("");
 
   const refreshBusiness = useCallback(async (selectedMonth = month) => {
+    const shopRevisionAtStart = shopSettingsRevision.current;
     const query = new URLSearchParams({ month: selectedMonth });
     const [catalog, depositList, expenseList, monthlyReport, billingStatus, shopSettings] = await Promise.all([
       request<Service[]>("/catalog"),
@@ -203,7 +206,9 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
     setExpenses(expenseList);
     setReport(monthlyReport);
     setBilling(billingStatus);
-    setShop(shopSettings);
+    if (shopRevisionAtStart === shopSettingsRevision.current && shopSettingsWrites.current === 0) {
+      setShop(shopSettings);
+    }
   }, [month]);
 
   const refreshTenants = useCallback(async () => {
@@ -321,33 +326,44 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   }
 
   async function updateShopLogo(file: File | null) {
+    if (shopSettingsWrites.current > 0) return;
+    shopSettingsWrites.current += 1;
+    shopSettingsRevision.current += 1;
     await runAction(async () => {
-      let logoDataUrl: string | null = null;
-      if (file) {
-        if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 1_048_576) {
-          throw new Error("Choisis une image PNG, JPEG ou WebP de 1 Mo maximum.");
+      try {
+        let logoDataUrl: string | null = null;
+        if (file) {
+          if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 1_048_576) {
+            throw new Error("Choisis une image PNG, JPEG ou WebP de 1 Mo maximum.");
+          }
+          logoDataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onerror = () => reject(new Error("La lecture du fichier a échoué."));
+            reader.onload = () => {
+              if (typeof reader.result === "string") resolve(reader.result);
+              else reject(new Error("Le fichier image est invalide."));
+            };
+            reader.readAsDataURL(file);
+          });
         }
-        logoDataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onerror = () => reject(new Error("La lecture du fichier a échoué."));
-          reader.onload = () => {
-            if (typeof reader.result === "string") resolve(reader.result);
-            else reject(new Error("Le fichier image est invalide."));
-          };
-          reader.readAsDataURL(file);
+        const updatedShop = await request<ShopSettings>("/settings/shop", {
+          method: "PATCH",
+          body: JSON.stringify({ logoDataUrl }),
         });
+        setShop(updatedShop);
+        setMessage(file ? "Le logo de votre boutique a été enregistré." : "Le logo de votre boutique a été supprimé.");
+      } finally {
+        shopSettingsWrites.current -= 1;
+        shopSettingsRevision.current += 1;
       }
-      const updatedShop = await request<ShopSettings>("/settings/shop", {
-        method: "PATCH",
-        body: JSON.stringify({ logoDataUrl }),
-      });
-      setShop(updatedShop);
-      setMessage(file ? "Le logo de votre boutique a été enregistré." : "Le logo de votre boutique a été supprimé.");
     });
   }
 
   async function updateShopColorTheme(colorTheme: ShopColorTheme) {
+    if (shopSettingsWrites.current > 0) return;
     const previousTheme = shop.colorTheme;
+    shopSettingsWrites.current += 1;
+    shopSettingsRevision.current += 1;
     setShop((currentShop) => ({ ...currentShop, colorTheme }));
     await runAction(async () => {
       try {
@@ -361,6 +377,9 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
       } catch (cause) {
         setShop((currentShop) => ({ ...currentShop, colorTheme: previousTheme }));
         throw cause;
+      } finally {
+        shopSettingsWrites.current -= 1;
+        shopSettingsRevision.current += 1;
       }
     });
   }
