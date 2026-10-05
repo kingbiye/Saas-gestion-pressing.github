@@ -23,7 +23,14 @@ type Report = {
   profitCents: number;
   topServices: { name: string; count: number }[];
 };
-type Billing = { plan: string; expiresAt: string; active: boolean; paymentPending: boolean };
+type Billing = {
+  plan: string;
+  expiresAt: string;
+  active: boolean;
+  paymentPending: boolean;
+  checkoutAvailable: boolean;
+  pendingPaymentId: string | null;
+};
 type AdminTenant = {
   id: string;
   name: string;
@@ -108,6 +115,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       INVALID_LOGO: "Choisis une image PNG, JPEG ou WebP valide de 1 Mo maximum.",
       INVALID_COLOR_THEME: "La couleur choisie n’est pas disponible. Sélectionne une des couleurs proposées.",
       PAYLOAD_TOO_LARGE: "Le fichier est trop volumineux. La taille maximale est de 1 Mo.",
+      BILLING_NOT_CONFIGURED: "Le paiement en ligne n’est pas encore configuré. Contacte l’administrateur.",
+      PAYMENT_PROVIDER_UNAVAILABLE: "SasPay ne répond pas pour le moment. Réessaie dans quelques instants.",
+      PAYMENT_PROVIDER_ERROR: "SasPay n’a pas pu préparer le paiement. Réessaie dans quelques instants.",
+      PAYMENT_PROVIDER_INVALID_RESPONSE: "La réponse de SasPay est invalide. Contacte l’administrateur.",
     };
     const message = knownErrors[apiError] || apiError || `La requête a échoué (${response.status}).`;
     throw new Error(message);
@@ -180,6 +191,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [report, setReport] = useState<Report | null>(null);
   const [billing, setBilling] = useState<Billing | null>(null);
+  const [pendingPaymentId, setPendingPaymentId] = useState("");
   const [shop, setShop] = useState<ShopSettings>({ name: "", logoDataUrl: null, colorTheme: "forest" });
   const shopSettingsRevision = useRef(0);
   const shopSettingsWrites = useRef(0);
@@ -200,25 +212,35 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
 
   const refreshBusiness = useCallback(async (selectedMonth = month) => {
     const shopRevisionAtStart = shopSettingsRevision.current;
-    const query = new URLSearchParams({ month: selectedMonth });
-    const [catalog, depositList, expenseList, monthlyReport, billingStatus, shopSettings] = await Promise.all([
-      request<Service[]>("/catalog"),
-      request<Deposit[]>("/deposits"),
-      request<Expense[]>("/expenses"),
-      request<Report>(`/reports/monthly?${query}`),
+    const [billingStatus, shopSettings] = await Promise.all([
       request<Billing>("/billing/status"),
       request<ShopSettings>("/settings/shop"),
     ]);
-    setServices(catalog);
-    setDeposits(depositList);
-    setExpenses(expenseList);
-    setReport(monthlyReport);
     setBilling(billingStatus);
+    setPendingPaymentId(billingStatus.pendingPaymentId ?? "");
     if (shopRevisionAtStart === shopSettingsRevision.current && shopSettingsWrites.current === 0) {
       setShop(preferredShopTheme.current
         ? { ...shopSettings, colorTheme: preferredShopTheme.current }
         : shopSettings);
     }
+    if (!billingStatus.active) {
+      setServices([]);
+      setDeposits([]);
+      setExpenses([]);
+      setReport(null);
+      return;
+    }
+    const query = new URLSearchParams({ month: selectedMonth });
+    const [catalog, depositList, expenseList, monthlyReport] = await Promise.all([
+      request<Service[]>("/catalog"),
+      request<Deposit[]>("/deposits"),
+      request<Expense[]>("/expenses"),
+      request<Report>(`/reports/monthly?${query}`),
+    ]);
+    setServices(catalog);
+    setDeposits(depositList);
+    setExpenses(expenseList);
+    setReport(monthlyReport);
   }, [month]);
 
   const refreshTenants = useCallback(async () => {
@@ -243,6 +265,13 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
     if (token) {
       setResetToken(token);
       setForgotMode(true);
+    }
+    const billingPayment = new URLSearchParams(window.location.search).get("billing_payment");
+    if (billingPayment === "success") {
+      setMessage("Paiement confirmé. Votre abonnement est maintenant actif.");
+    } else if (billingPayment === "pending") {
+      setMessage("Le paiement n’est pas encore confirmé. Actualisez votre espace dans quelques instants.");
+      setPendingPaymentId(new URLSearchParams(window.location.search).get("payment_id") ?? "");
     }
     if (!readToken("pressing_token")) return;
     setAuthenticated(true);
@@ -333,6 +362,33 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function startSubscription() {
+    await runAction(async () => {
+      const checkout = await request<{ checkoutUrl: string }>("/billing/checkout", {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      window.location.assign(checkout.checkoutUrl);
+    });
+  }
+
+  async function checkSubscriptionPayment() {
+    if (!pendingPaymentId) return;
+    await runAction(async () => {
+      const result = await request<{ status: string }>(`/billing/checkout/${encodeURIComponent(pendingPaymentId)}/status`);
+      if (result.status === "PAID") {
+        setPendingPaymentId("");
+        setMessage("Paiement confirmé. Votre abonnement est maintenant actif.");
+        await refreshBusiness();
+      } else if (result.status === "PENDING") {
+        setMessage("Le paiement est toujours en attente de confirmation. Réessaie dans quelques instants.");
+      } else {
+        setPendingPaymentId("");
+        setMessage("Ce paiement n’a pas abouti. Tu peux relancer un nouveau paiement.");
+      }
+    });
   }
 
   async function updateShopLogo(file: File | null) {
@@ -605,6 +661,35 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
           {message && <div className="notice notice-success" role="status">{message}</div>}
 
           {view === "overview" && <>
+            {billing && <section className="content-card subscription-card">
+              <div>
+                <p className="eyebrow">ABONNEMENT</p>
+                <h2>{billing.paymentPending ? "Votre période d’essai" : "Votre abonnement Pressing OS"}</h2>
+                <p className="muted">
+                  {billing.paymentPending
+                    ? `Essai gratuit jusqu’au ${new Date(billing.expiresAt).toLocaleDateString("fr-FR")}.`
+                    : `Accès ${billing.active ? "actif" : "expiré"}${billing.active ? ` jusqu’au ${new Date(billing.expiresAt).toLocaleDateString("fr-FR")}` : ""}.`}
+                  {" "}Un paiement de 5 000 FCFA prolonge l’accès de 30 jours.
+                </p>
+              </div>
+              <div className="subscription-actions">
+                <button
+                  className="button button-primary"
+                  onClick={startSubscription}
+                  disabled={loading || !billing.checkoutAvailable}
+                >
+                  {loading ? "Préparation…" : "Payer 5 000 FCFA"}
+                </button>
+                {pendingPaymentId && <button
+                  className="button button-secondary"
+                  onClick={checkSubscriptionPayment}
+                  disabled={loading}
+                >
+                  Vérifier le paiement
+                </button>}
+                {!billing.checkoutAvailable && <p className="subscription-unavailable">Le paiement SasPay n’est pas encore configuré.</p>}
+              </div>
+            </section>}
             <div className="stats-grid">
               <StatCard label="Chiffre d'affaires" value={`${money(report?.revenueCents ?? 0)} FCFA`} detail={monthLabel(month)} />
               <StatCard label="Dépenses" value={`${money(report?.expensesCents ?? 0)} FCFA`} detail={monthLabel(month)} tone="warm" />
@@ -619,7 +704,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
               <section className="content-card">
                 <div className="section-title"><div><p className="eyebrow">RÉSUMÉ DU MOIS</p><h2>{monthLabel(month)}</h2></div><button className="button button-small button-secondary" onClick={() => setView("reports")}>Rapport</button></div>
                 <div className="summary-list"><div><span>Prestations enregistrées</span><strong>{report?.topServices.reduce((sum, service) => sum + service.count, 0) ?? 0}</strong></div><div><span>Commandes à retirer</span><strong>{readyDeposits}</strong></div><div><span>Services au catalogue</span><strong>{services.length}</strong></div></div>
-                {billing?.paymentPending && <p className="trial-note">Votre période d'essai se termine le {new Date(billing.expiresAt).toLocaleDateString("fr-FR")}.</p>}
+                {billing?.paymentPending && <p className="trial-note">Votre période d’essai se termine le {new Date(billing.expiresAt).toLocaleDateString("fr-FR")}.</p>}
               </section>
             </div>
           </>}

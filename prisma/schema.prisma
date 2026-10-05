@@ -23,6 +23,21 @@ model Tenant {
   services    Service[]
   deposits    Deposit[]
   expenses    Expense[]
+  billingPayments BillingPayment[]
+}
+
+model BillingPayment {
+  id                String    @id @default(cuid())
+  tenantId          String
+  providerSessionId String?   @unique
+  amountXof         Int       @default(5000)
+  durationDays      Int       @default(30)
+  status            String    @default("PENDING")
+  createdAt         DateTime  @default(now())
+  paidAt            DateTime?
+  tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
 }
 
 model User {
