@@ -176,6 +176,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   const [shop, setShop] = useState<ShopSettings>({ name: "", logoDataUrl: null, colorTheme: "forest" });
   const shopSettingsRevision = useRef(0);
   const shopSettingsWrites = useRef(0);
+  const preferredShopTheme = useRef<ShopColorTheme | null>(null);
   const [tenants, setTenants] = useState<AdminTenant[]>([]);
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [serviceName, setServiceName] = useState("");
@@ -207,7 +208,9 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
     setReport(monthlyReport);
     setBilling(billingStatus);
     if (shopRevisionAtStart === shopSettingsRevision.current && shopSettingsWrites.current === 0) {
-      setShop(shopSettings);
+      setShop(preferredShopTheme.current
+        ? { ...shopSettings, colorTheme: preferredShopTheme.current }
+        : shopSettings);
     }
   }, [month]);
 
@@ -361,9 +364,9 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
 
   async function updateShopColorTheme(colorTheme: ShopColorTheme) {
     if (shopSettingsWrites.current > 0) return;
-    const previousTheme = shop.colorTheme;
     shopSettingsWrites.current += 1;
     shopSettingsRevision.current += 1;
+    preferredShopTheme.current = colorTheme;
     setShop((currentShop) => ({ ...currentShop, colorTheme }));
     await runAction(async () => {
       try {
@@ -371,12 +374,12 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
           method: "PATCH",
           body: JSON.stringify({ colorTheme }),
         });
-        setShop(updatedShop);
+        if (updatedShop.colorTheme !== colorTheme) {
+          throw new Error("Le serveur n’a pas confirmé l’enregistrement de cette couleur. Réessaie.");
+        }
+        setShop((currentShop) => ({ ...updatedShop, colorTheme: preferredShopTheme.current ?? colorTheme }));
         const themeName = SHOP_COLOR_THEMES.find((theme) => theme.id === colorTheme)?.name ?? colorTheme;
         setMessage(`La couleur « ${themeName} » a été appliquée.`);
-      } catch (cause) {
-        setShop((currentShop) => ({ ...currentShop, colorTheme: previousTheme }));
-        throw cause;
       } finally {
         shopSettingsWrites.current -= 1;
         shopSettingsRevision.current += 1;
@@ -446,6 +449,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   async function signOut() {
     clearToken("pressing_token");
     clearToken("pressing_admin_token");
+    preferredShopTheme.current = null;
     setAuthenticated(false);
     setAdminAuthenticated(false);
     setError("");
