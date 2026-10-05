@@ -7,6 +7,9 @@ dépôts, dépenses, rapports mensuels et administration de la plateforme.
 
 - `apps/web` : interface Next.js et routes API exécutées dans le runtime Node.js
   de Vercel. Le navigateur appelle l'API sur la même origine via `/api`.
+- `apps/web/public/pressing-scenes` : photos Unsplash embarquées localement
+  pour le bandeau décoratif de l'espace professionnel, sous licence
+  [Unsplash](https://unsplash.com/license).
 - `apps/api` : logique métier HTTP utilisée par les routes Next.js et le serveur
   local de développement.
 - `prisma` : schéma de données PostgreSQL.

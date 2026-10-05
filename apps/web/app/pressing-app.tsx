@@ -46,11 +46,11 @@ const SHOP_COLOR_THEMES: { id: ShopColorTheme; name: string; swatch: string }[] 
   { id: "slate", name: "Ardoise", swatch: "#536574" },
 ];
 const PRESSING_SCENES = [
-  "/pressing-scenes/folded-laundry.svg",
-  "/pressing-scenes/washing-machine.svg",
-  "/pressing-scenes/steam-iron.svg",
-  "/pressing-scenes/garment-rack.svg",
-  "/pressing-scenes/laundry-basket.svg",
+  "/pressing-scenes/machines.jpg",
+  "/pressing-scenes/ironing.jpg",
+  "/pressing-scenes/steaming.jpg",
+  "/pressing-scenes/garments.jpg",
+  "/pressing-scenes/pressing-shop.jpg",
 ];
 
 const STATUS_LABELS: Record<string, string> = {
