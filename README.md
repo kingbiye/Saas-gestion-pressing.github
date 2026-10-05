@@ -11,6 +11,8 @@ dépôts, dépenses, rapports mensuels et administration de la plateforme.
   local de développement.
 - `prisma` : schéma de données PostgreSQL.
 - Supabase héberge PostgreSQL ; Vercel héberge l'application web et son API.
+- `/` : connexion et espace des professionnels du pressing.
+- `/admin` : connexion et tableau de bord de l'administration plateforme.
 
 ## Développement local
 
