@@ -45,6 +45,13 @@ const SHOP_COLOR_THEMES: { id: ShopColorTheme; name: string; swatch: string }[] 
   { id: "sunrise", name: "Ambre", swatch: "#a66a12" },
   { id: "slate", name: "Ardoise", swatch: "#536574" },
 ];
+const PRESSING_SCENES = [
+  "/pressing-scenes/folded-laundry.svg",
+  "/pressing-scenes/washing-machine.svg",
+  "/pressing-scenes/steam-iron.svg",
+  "/pressing-scenes/garment-rack.svg",
+  "/pressing-scenes/laundry-basket.svg",
+];
 
 const STATUS_LABELS: Record<string, string> = {
   RECEIVED: "Reçu",
@@ -575,6 +582,17 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
       </aside>
       <section className="main-area">
         <header className="topbar">
+          <div className="topbar-scenes" aria-hidden="true">
+            {PRESSING_SCENES.map((src, index) => (
+              <img
+                key={src}
+                src={src}
+                alt=""
+                className="topbar-scene"
+                style={{ animationDelay: `${index * -5}s` }}
+              />
+            ))}
+          </div>
           <div className="topbar-shop-name">
             <span className="topbar-caption">Espace professionnel</span>
             <strong title={shop.name}>{shop.name || "Mon pressing"}</strong>

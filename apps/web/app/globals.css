@@ -109,11 +109,15 @@ strong, h1, h2, h3 { font-family: Manrope, "DM Sans", Arial, sans-serif; }
 .avatar-logo img { width: 100%; height: 100%; object-fit: contain; }
 .avatar-small { width: 32px; height: 32px; border: 1px solid #dce7de; background: #eaf2e8; }
 .main-area { min-width: 0; }
-.topbar { display: flex; justify-content: space-between; align-items: center; min-height: 82px; gap: 18px; padding: 10px clamp(22px, 4vw, 58px); border-bottom: 1px solid var(--line); background: var(--paper); }
-.topbar-shop-name { display: grid; min-width: 0; gap: 3px; }
+.topbar { position: relative; isolation: isolate; display: flex; justify-content: space-between; align-items: center; min-height: 100px; gap: 18px; overflow: hidden; padding: 10px clamp(22px, 4vw, 58px); border-bottom: 1px solid var(--line); background: var(--paper); }
+.topbar::before { position: absolute; z-index: -1; inset: 0; background: linear-gradient(90deg, color-mix(in srgb, var(--paper) 76%, transparent), color-mix(in srgb, var(--paper) 68%, transparent) 55%, color-mix(in srgb, var(--paper) 48%, transparent)); content: ""; }
+.topbar-scenes { position: absolute; z-index: -2; inset: 0; overflow: hidden; }
+.topbar-scene { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 48%; opacity: 0; animation: pressing-scene-cycle 25s infinite; }
+@keyframes pressing-scene-cycle { 0%, 100% { opacity: 0; } 2%, 18% { opacity: 1; } 22% { opacity: 0; } }
+.topbar-shop-name { position: relative; z-index: 1; display: grid; min-width: 0; gap: 3px; }
 .topbar-caption { color: var(--muted-dark); font-size: 12px; font-weight: 600; }
 .topbar-shop-name strong { overflow: hidden; color: var(--ink); font-size: clamp(20px, 2vw, 28px); line-height: 1.15; letter-spacing: -.7px; text-overflow: ellipsis; white-space: nowrap; }
-.topbar-actions { display: flex; align-items: center; gap: 15px; }
+.topbar-actions { position: relative; z-index: 1; display: flex; align-items: center; gap: 15px; }
 .today-label { color: var(--muted); font-size: 12px; text-transform: capitalize; }
 .workspace { width: min(100%, 1500px); margin: auto; padding: 36px clamp(22px, 4vw, 58px) 60px; }
 .page-heading { margin-bottom: 25px; }
@@ -248,7 +252,7 @@ td small { display: block; margin-top: 3px; color: #87938b; font-size: 10px; }
   .nav-item-active { box-shadow: inset 0 2px var(--lime); }
   .nav-icon { height: 22px; font-size: 18px; }
   .nav-count { position: absolute; transform: translate(20px, -8px); min-width: 17px; height: 17px; font-size: 9px; }
-  .topbar { min-height: 72px; padding: 8px 17px; }
+  .topbar { min-height: 88px; padding: 8px 17px; }
   .topbar-caption { font-size: 10px; }
   .topbar-shop-name strong { font-size: 19px; }
   .today-label { font-size: 10px; }
@@ -289,4 +293,8 @@ td small { display: block; margin-top: 3px; color: #87938b; font-size: 10px; }
   .section-title h2 { font-size: 15px; }
   .inline-form { grid-template-columns: 1fr; }
   .inline-form label:first-child { grid-column: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .topbar-scene { animation: none; opacity: 0; }
+  .topbar-scene:first-child { opacity: 1; }
 }
