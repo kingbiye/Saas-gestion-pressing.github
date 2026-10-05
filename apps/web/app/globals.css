@@ -79,13 +79,13 @@ strong, h1, h2, h3 { font-family: Manrope, "DM Sans", Arial, sans-serif; }
 .notice-error { color: #8f3431; background: var(--red-soft); border-color: #f5d8d5; }
 .notice-success { color: #236644; background: var(--green-soft); border-color: #d1e8d8; }
 
-.app-shell { --shop-sidebar: #173c30; display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100vh; }
-.app-shell[data-color-theme="ocean"] { --green: #146a8a; --green-dark: #0e4c66; --green-soft: #e6f3f7; --lime: #b8e5f1; --shop-sidebar: #123e4d; }
-.app-shell[data-color-theme="royal"] { --green: #4057a6; --green-dark: #2e3f7d; --green-soft: #edf0fb; --lime: #c7d0fa; --shop-sidebar: #29375f; }
-.app-shell[data-color-theme="plum"] { --green: #784a83; --green-dark: #593763; --green-soft: #f4edf6; --lime: #e3c7eb; --shop-sidebar: #49344f; }
-.app-shell[data-color-theme="terracotta"] { --green: #a94f36; --green-dark: #7d3927; --green-soft: #fbefeb; --lime: #f2c2a9; --shop-sidebar: #5a332b; }
-.app-shell[data-color-theme="sunrise"] { --green: #a66a12; --green-dark: #7b4d0b; --green-soft: #fbf3e4; --lime: #f1d38c; --shop-sidebar: #55431f; }
-.app-shell[data-color-theme="slate"] { --green: #536574; --green-dark: #3c4a56; --green-soft: #edf1f4; --lime: #c5d1dc; --shop-sidebar: #34434f; }
+.app-shell { --shop-sidebar: #173c30; display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100vh; background: var(--canvas); }
+.app-shell[data-color-theme="ocean"] { --green: #146a8a; --green-dark: #0e4c66; --green-soft: #e6f3f7; --lime: #b8e5f1; --shop-sidebar: #123e4d; --canvas: #f1f8fa; --paper: #fdfeff; --line: #dcebef; }
+.app-shell[data-color-theme="royal"] { --green: #4057a6; --green-dark: #2e3f7d; --green-soft: #edf0fb; --lime: #c7d0fa; --shop-sidebar: #29375f; --canvas: #f4f5fb; --paper: #fff; --line: #e2e5f1; }
+.app-shell[data-color-theme="plum"] { --green: #784a83; --green-dark: #593763; --green-soft: #f4edf6; --lime: #e3c7eb; --shop-sidebar: #49344f; --canvas: #f8f4f9; --paper: #fff; --line: #ece2ef; }
+.app-shell[data-color-theme="terracotta"] { --green: #a94f36; --green-dark: #7d3927; --green-soft: #fbefeb; --lime: #f2c2a9; --shop-sidebar: #5a332b; --canvas: #faf4f1; --paper: #fffefd; --line: #efe3dd; }
+.app-shell[data-color-theme="sunrise"] { --green: #a66a12; --green-dark: #7b4d0b; --green-soft: #fbf3e4; --lime: #f1d38c; --shop-sidebar: #55431f; --canvas: #fbf7ed; --paper: #fffefa; --line: #eee7d7; }
+.app-shell[data-color-theme="slate"] { --green: #536574; --green-dark: #3c4a56; --green-soft: #edf1f4; --lime: #c5d1dc; --shop-sidebar: #34434f; --canvas: #f3f6f7; --paper: #fff; --line: #e1e7eb; }
 .sidebar { position: sticky; top: 0; display: flex; flex-direction: column; height: 100vh; padding: 25px 16px 18px; color: #eef5ef; background: var(--shop-sidebar); }
 .sidebar .brand { margin: 0 8px 46px; }
 .workspace-label { padding: 0 11px; margin-bottom: 12px; color: #8eac9c; font-size: 9px; font-weight: 800; letter-spacing: 1.2px; }
@@ -109,7 +109,7 @@ strong, h1, h2, h3 { font-family: Manrope, "DM Sans", Arial, sans-serif; }
 .avatar-logo img { width: 100%; height: 100%; object-fit: contain; }
 .avatar-small { width: 32px; height: 32px; border: 1px solid #dce7de; background: #eaf2e8; }
 .main-area { min-width: 0; }
-.topbar { display: flex; justify-content: space-between; align-items: center; min-height: 82px; gap: 18px; padding: 10px clamp(22px, 4vw, 58px); border-bottom: 1px solid var(--line); background: rgba(255,255,255,.85); }
+.topbar { display: flex; justify-content: space-between; align-items: center; min-height: 82px; gap: 18px; padding: 10px clamp(22px, 4vw, 58px); border-bottom: 1px solid var(--line); background: var(--paper); }
 .topbar-shop-name { display: grid; min-width: 0; gap: 3px; }
 .topbar-caption { color: var(--muted-dark); font-size: 12px; font-weight: 600; }
 .topbar-shop-name strong { overflow: hidden; color: var(--ink); font-size: clamp(20px, 2vw, 28px); line-height: 1.15; letter-spacing: -.7px; text-overflow: ellipsis; white-space: nowrap; }

@@ -347,14 +347,21 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   }
 
   async function updateShopColorTheme(colorTheme: ShopColorTheme) {
+    const previousTheme = shop.colorTheme;
+    setShop((currentShop) => ({ ...currentShop, colorTheme }));
     await runAction(async () => {
-      const updatedShop = await request<ShopSettings>("/settings/shop", {
-        method: "PATCH",
-        body: JSON.stringify({ colorTheme }),
-      });
-      setShop(updatedShop);
-      const themeName = SHOP_COLOR_THEMES.find((theme) => theme.id === colorTheme)?.name ?? colorTheme;
-      setMessage(`La couleur « ${themeName} » a été appliquée.`);
+      try {
+        const updatedShop = await request<ShopSettings>("/settings/shop", {
+          method: "PATCH",
+          body: JSON.stringify({ colorTheme }),
+        });
+        setShop(updatedShop);
+        const themeName = SHOP_COLOR_THEMES.find((theme) => theme.id === colorTheme)?.name ?? colorTheme;
+        setMessage(`La couleur « ${themeName} » a été appliquée.`);
+      } catch (cause) {
+        setShop((currentShop) => ({ ...currentShop, colorTheme: previousTheme }));
+        throw cause;
+      }
     });
   }
 
