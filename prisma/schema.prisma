@@ -13,6 +13,7 @@ model Tenant {
   id          String    @id @default(cuid())
   name        String
   logoDataUrl String?   @db.Text
+  colorTheme  String    @default("forest")
   trialEndsAt DateTime
   plan        String    @default("TRIAL")
   subscriptionEndsAt DateTime?

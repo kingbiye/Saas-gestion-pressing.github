@@ -27,6 +27,7 @@ const prisma = globalForPrisma.pressingPrisma ?? new PrismaClient(
 if (process.env.NODE_ENV !== "production") globalForPrisma.pressingPrisma = prisma;
 const maxRequestBytes = 1_500_000;
 const maxLogoBytes = 1_048_576;
+const shopColorThemes = new Set(["forest", "ocean", "royal", "plum", "terracotta", "sunrise", "slate"]);
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 const trialDays = Number(process.env.TRIAL_DAYS ?? 10);
 const maxLoginAttempts = 5;
@@ -312,7 +313,7 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
   if (url.pathname === "/settings/shop" && req.method === "GET") {
     const shop = await prisma.tenant.findUnique({
       where: { id: current.tenant.id },
-      select: { name: true, logoDataUrl: true },
+      select: { name: true, logoDataUrl: true, colorTheme: true },
     });
     if (!shop) return json(res, 404, { error: "SHOP_NOT_FOUND" });
     return json(res, 200, shop);
@@ -320,11 +321,19 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
   if (url.pathname === "/settings/shop" && req.method === "PATCH") {
     const input = await body(req);
     const logoInput = input.logoDataUrl;
-    if (logoInput !== null && typeof logoInput !== "string") {
+    const themeInput = input.colorTheme;
+    if (logoInput !== undefined && logoInput !== null && typeof logoInput !== "string") {
       return json(res, 400, { error: "INVALID_LOGO" });
     }
-    let logoDataUrl: string | null = typeof logoInput === "string" ? logoInput : null;
-    if (logoDataUrl !== null) {
+    if (themeInput !== undefined && (typeof themeInput !== "string" || !shopColorThemes.has(themeInput))) {
+      return json(res, 400, { error: "INVALID_COLOR_THEME" });
+    }
+    if (logoInput === undefined && themeInput === undefined) {
+      return json(res, 400, { error: "INVALID_SHOP_SETTINGS" });
+    }
+    let logoDataUrl: string | null | undefined =
+      typeof logoInput === "string" ? logoInput : logoInput === null ? null : undefined;
+    if (typeof logoDataUrl === "string") {
       const match = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(logoDataUrl);
       if (!match) return json(res, 400, { error: "INVALID_LOGO" });
       const image = Buffer.from(match[2], "base64");
@@ -337,10 +346,13 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
       }
       logoDataUrl = `data:image/${match[1]};base64,${image.toString("base64")}`;
     }
+    const data: Prisma.TenantUpdateInput = {};
+    if (logoInput !== undefined) data.logoDataUrl = logoDataUrl;
+    if (typeof themeInput === "string") data.colorTheme = themeInput;
     const tenant = await prisma.tenant.update({
       where: { id: current.tenant.id },
-      data: { logoDataUrl },
-      select: { name: true, logoDataUrl: true },
+      data,
+      select: { name: true, logoDataUrl: true, colorTheme: true },
     });
     return json(res, 200, tenant);
   }

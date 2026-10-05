@@ -33,7 +33,18 @@ type AdminTenant = {
   _count: { users: number; deposits: number };
 };
 type View = "overview" | "deposits" | "catalog" | "expenses" | "reports" | "shop";
-type ShopSettings = { name: string; logoDataUrl: string | null };
+type ShopColorTheme = "forest" | "ocean" | "royal" | "plum" | "terracotta" | "sunrise" | "slate";
+type ShopSettings = { name: string; logoDataUrl: string | null; colorTheme: ShopColorTheme };
+
+const SHOP_COLOR_THEMES: { id: ShopColorTheme; name: string; swatch: string }[] = [
+  { id: "forest", name: "Vert forêt", swatch: "#176b4b" },
+  { id: "ocean", name: "Bleu océan", swatch: "#146a8a" },
+  { id: "royal", name: "Bleu royal", swatch: "#4057a6" },
+  { id: "plum", name: "Prune", swatch: "#784a83" },
+  { id: "terracotta", name: "Terracotta", swatch: "#a94f36" },
+  { id: "sunrise", name: "Ambre", swatch: "#a66a12" },
+  { id: "slate", name: "Ardoise", swatch: "#536574" },
+];
 
 const STATUS_LABELS: Record<string, string> = {
   RECEIVED: "Reçu",
@@ -88,6 +99,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const knownErrors: Record<string, string> = {
       DATABASE_BUSY: "La base reçoit trop de connexions pour le moment. Réessaie dans quelques secondes.",
       INVALID_LOGO: "Choisis une image PNG, JPEG ou WebP valide de 1 Mo maximum.",
+      INVALID_COLOR_THEME: "La couleur choisie n’est pas disponible. Sélectionne une des couleurs proposées.",
       PAYLOAD_TOO_LARGE: "Le fichier est trop volumineux. La taille maximale est de 1 Mo.",
     };
     const message = knownErrors[apiError] || apiError || `La requête a échoué (${response.status}).`;
@@ -161,7 +173,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [report, setReport] = useState<Report | null>(null);
   const [billing, setBilling] = useState<Billing | null>(null);
-  const [shop, setShop] = useState<ShopSettings>({ name: "", logoDataUrl: null });
+  const [shop, setShop] = useState<ShopSettings>({ name: "", logoDataUrl: null, colorTheme: "forest" });
   const [tenants, setTenants] = useState<AdminTenant[]>([]);
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [serviceName, setServiceName] = useState("");
@@ -331,6 +343,18 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
       });
       setShop(updatedShop);
       setMessage(file ? "Le logo de votre boutique a été enregistré." : "Le logo de votre boutique a été supprimé.");
+    });
+  }
+
+  async function updateShopColorTheme(colorTheme: ShopColorTheme) {
+    await runAction(async () => {
+      const updatedShop = await request<ShopSettings>("/settings/shop", {
+        method: "PATCH",
+        body: JSON.stringify({ colorTheme }),
+      });
+      setShop(updatedShop);
+      const themeName = SHOP_COLOR_THEMES.find((theme) => theme.id === colorTheme)?.name ?? colorTheme;
+      setMessage(`La couleur « ${themeName} » a été appliquée.`);
     });
   }
 
@@ -507,7 +531,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   };
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" data-color-theme={shop.colorTheme}>
       <aside className="sidebar">
         <a className="brand brand-light" href="/"><span className={`brand-mark ${shop.logoDataUrl ? "brand-mark-logo" : ""}`}>{shop.logoDataUrl ? <img src={shop.logoDataUrl} alt={`Logo ${shop.name}`} /> : "P"}</span> pressing<span>OS</span></a>
         <div className="workspace-label">ESPACE DE TRAVAIL</div>
@@ -617,6 +641,28 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
             <h3 className="report-month">{monthLabel(month)}</h3>
             <div className="stats-grid report-stats"><StatCard label="Chiffre d'affaires" value={`${money(report?.revenueCents ?? 0)} FCFA`} detail="Dépôts enregistrés" /><StatCard label="Dépenses" value={`${money(report?.expensesCents ?? 0)} FCFA`} detail="Dépenses déclarées" tone="warm" /><StatCard label="Résultat net" value={`${money(report?.profitCents ?? 0)} FCFA`} detail="Chiffre d'affaires − dépenses" tone="green" /></div>
             <div className="report-services"><div className="section-title"><div><p className="eyebrow">ACTIVITÉ</p><h2>Prestations les plus demandées</h2></div></div>{report?.topServices.length ? report.topServices.map((service, index) => <div className="popular-row" key={service.name}><span className="popular-rank">{String(index + 1).padStart(2, "0")}</span><strong>{service.name}</strong><span>{service.count} dépôt(s)</span></div>) : <p className="empty-state">Aucune prestation enregistrée pour ce mois.</p>}</div>
+          </section>}
+
+          {view === "shop" && <section className="content-card shop-settings-card">
+            <div className="section-title"><div><p className="eyebrow">IDENTITÉ DE VOTRE BOUTIQUE</p><h2>Personnaliser l’apparence</h2></div></div>
+            <p className="muted">Choisissez l’une des sept couleurs professionnelles. Elle sera enregistrée pour votre boutique.</p>
+            <fieldset className="theme-picker">
+              <legend>Couleur de l’interface</legend>
+              {SHOP_COLOR_THEMES.map((theme) => (
+                <label className={`theme-choice ${shop.colorTheme === theme.id ? "theme-choice-selected" : ""}`} key={theme.id}>
+                  <input
+                    type="radio"
+                    name="shop-color-theme"
+                    value={theme.id}
+                    checked={shop.colorTheme === theme.id}
+                    disabled={loading}
+                    onChange={() => void updateShopColorTheme(theme.id)}
+                  />
+                  <span className="theme-swatch" style={{ backgroundColor: theme.swatch }} />
+                  <span>{theme.name}</span>
+                </label>
+              ))}
+            </fieldset>
           </section>}
 
           {view === "shop" && <section className="content-card shop-settings-card">

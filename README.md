@@ -77,9 +77,9 @@ utiliser les routes métier.
 6. Générer une valeur longue et aléatoire pour `AUTH_SECRET`. Les secrets
    Supabase et administrateur doivent rester dans les variables Vercel, jamais
    dans une variable `NEXT_PUBLIC_*` ni dans Git.
-7. Appliquer le schéma à la base depuis un environnement de confiance. Le champ
-   de logo de boutique est ajouté de façon nullable ; cette commande ne supprime
-   pas les données existantes :
+7. Appliquer le schéma à la base depuis un environnement de confiance. Le logo
+   reste nullable et le thème de couleur reçoit une valeur par défaut ; ces
+   changements préservent les données existantes :
 
    ```bash
    npm run db:push
@@ -98,6 +98,8 @@ publique distincte ni configuration CORS de production n'est nécessaire.
 - `PLATFORM_ADMIN_EMAIL` et `PLATFORM_ADMIN_PASSWORD` : identifiants de
   l'administration de la plateforme.
 - `TRIAL_DAYS` : durée de l'essai en jours (10 par défaut).
+- Chaque boutique peut choisir une couleur d'interface parmi sept thèmes dans
+  « Ma boutique » ; son choix est enregistré avec les paramètres de boutique.
 - `WEB_ORIGIN` et `PORT` : utilisés par le serveur API autonome local.
 
 Ne jamais versionner `.env` ou d'autres secrets. Utiliser `npm ci` pour une
