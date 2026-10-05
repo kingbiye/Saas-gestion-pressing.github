@@ -1,12 +1,32 @@
-import { handleRequest, type ApiRequest, type ApiResponse } from "../../../../api/src/main";
+import { handleRequest, handleRequestError, type ApiRequest, type ApiResponse } from "../../../../api/src/main";
 
 export const runtime = "nodejs";
 
 async function dispatch(request: Request): Promise<Response> {
   const requestUrl = new URL(request.url);
   requestUrl.pathname = requestUrl.pathname.replace(/^\/api(?=\/|$)/, "") || "/";
+  const contentLength = Number(request.headers.get("content-length"));
+  if (request.headers.has("content-length") && Number.isFinite(contentLength) && contentLength > 1_500_000) {
+    return Response.json({ error: "PAYLOAD_TOO_LARGE" }, { status: 413 });
+  }
   const authorization = request.headers.get("authorization") ?? undefined;
-  const body = request.body ? Buffer.from(await request.arrayBuffer()) : undefined;
+  let body: Buffer | undefined;
+  if (request.body) {
+    const reader = request.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > 1_500_000) {
+        await reader.cancel();
+        return Response.json({ error: "PAYLOAD_TOO_LARGE" }, { status: 413 });
+      }
+      chunks.push(value);
+    }
+    body = Buffer.concat(chunks, size);
+  }
   const apiRequest: ApiRequest = {
     method: request.method,
     url: `${requestUrl.pathname}${requestUrl.search}`,
@@ -34,10 +54,7 @@ async function dispatch(request: Request): Promise<Response> {
   try {
     await handleRequest(apiRequest, apiResponse);
   } catch (error) {
-    console.error("API request failed:", error);
-    status = 500;
-    headers = { "content-type": "application/json" };
-    responseBody = JSON.stringify({ error: "INTERNAL_SERVER_ERROR" });
+    handleRequestError(error, apiResponse);
   }
 
   return new Response(responseBody, { status, headers });

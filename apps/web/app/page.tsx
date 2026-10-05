@@ -32,7 +32,8 @@ type AdminTenant = {
   createdAt: string;
   _count: { users: number; deposits: number };
 };
-type View = "overview" | "deposits" | "catalog" | "expenses" | "reports";
+type View = "overview" | "deposits" | "catalog" | "expenses" | "reports" | "shop";
+type ShopSettings = { name: string; logoDataUrl: string | null };
 
 const STATUS_LABELS: Record<string, string> = {
   RECEIVED: "Reçu",
@@ -47,6 +48,7 @@ const NAV_ITEMS: { id: View; label: string; icon: string }[] = [
   { id: "catalog", label: "Catalogue", icon: "◇" },
   { id: "expenses", label: "Dépenses", icon: "↗" },
   { id: "reports", label: "Rapports", icon: "▥" },
+  { id: "shop", label: "Ma boutique", icon: "⚙" },
 ];
 
 function money(cents: number) {
@@ -80,9 +82,15 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const contentType = response.headers.get("content-type") ?? "";
   const data: unknown = contentType.includes("application/json") ? await response.json() : null;
   if (!response.ok) {
-    const message = data && typeof data === "object" && "error" in data
+    const apiError = data && typeof data === "object" && "error" in data
       ? String(data.error)
-      : `La requête a échoué (${response.status}).`;
+      : "";
+    const knownErrors: Record<string, string> = {
+      DATABASE_BUSY: "La base reçoit trop de connexions pour le moment. Réessaie dans quelques secondes.",
+      INVALID_LOGO: "Choisis une image PNG, JPEG ou WebP valide de 1 Mo maximum.",
+      PAYLOAD_TOO_LARGE: "Le fichier est trop volumineux. La taille maximale est de 1 Mo.",
+    };
+    const message = knownErrors[apiError] || apiError || `La requête a échoué (${response.status}).`;
     throw new Error(message);
   }
   return data as T;
@@ -101,10 +109,10 @@ function StatCard({ label, value, detail, tone = "default" }: { label: string; v
   return <article className={`stat-card stat-${tone}`}><p>{label}</p><strong>{value}</strong><span>{detail}</span></article>;
 }
 
-function DepositRow({ deposit, onAdvance, onTogglePaid }: {
+function DepositRow({ deposit, onAdvance, onPaymentChange }: {
   deposit: Deposit;
   onAdvance: (deposit: Deposit) => void;
-  onTogglePaid: (deposit: Deposit) => void;
+  onPaymentChange: (deposit: Deposit, paid: boolean) => void;
 }) {
   const next = STATUS_ORDER[STATUS_ORDER.indexOf(deposit.status) + 1];
   return (
@@ -113,7 +121,19 @@ function DepositRow({ deposit, onAdvance, onTogglePaid }: {
       <td>{deposit.customerPhone || "—"}</td>
       <td><span className={`status status-${deposit.status.toLowerCase()}`}>{STATUS_LABELS[deposit.status] ?? deposit.status}</span></td>
       <td>{money(deposit.priceCents)} FCFA</td>
-      <td><button className={`payment ${deposit.paid ? "payment-paid" : ""}`} onClick={() => onTogglePaid(deposit)}>{deposit.paid ? "Payé" : "À régler"}</button></td>
+      <td><div className="payment-options" role="group" aria-label={`Paiement de ${deposit.customerName}`}>
+        {[{ value: true, label: "Payé" }, { value: false, label: "Non payé" }].map((option) => (
+          <label className={`payment-option ${deposit.paid === option.value ? "payment-option-selected" : ""}`} key={option.label}>
+            <input
+              type="radio"
+              name={`payment-${deposit.id}`}
+              checked={deposit.paid === option.value}
+              onChange={() => onPaymentChange(deposit, option.value)}
+            />
+            {option.label}
+          </label>
+        ))}
+      </div></td>
       <td>{next ? <button className="button button-small button-secondary" onClick={() => onAdvance(deposit)}>Passer à « {STATUS_LABELS[next]} »</button> : <span className="muted">Terminé</span>}</td>
     </tr>
   );
@@ -142,6 +162,7 @@ export default function Home() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [report, setReport] = useState<Report | null>(null);
   const [billing, setBilling] = useState<Billing | null>(null);
+  const [shop, setShop] = useState<ShopSettings>({ name: "", logoDataUrl: null });
   const [tenants, setTenants] = useState<AdminTenant[]>([]);
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [serviceName, setServiceName] = useState("");
@@ -158,18 +179,20 @@ export default function Home() {
 
   const refreshBusiness = useCallback(async (selectedMonth = month) => {
     const query = new URLSearchParams({ month: selectedMonth });
-    const [catalog, depositList, expenseList, monthlyReport, billingStatus] = await Promise.all([
+    const [catalog, depositList, expenseList, monthlyReport, billingStatus, shopSettings] = await Promise.all([
       request<Service[]>("/catalog"),
       request<Deposit[]>("/deposits"),
       request<Expense[]>("/expenses"),
       request<Report>(`/reports/monthly?${query}`),
       request<Billing>("/billing/status"),
+      request<ShopSettings>("/settings/shop"),
     ]);
     setServices(catalog);
     setDeposits(depositList);
     setExpenses(expenseList);
     setReport(monthlyReport);
     setBilling(billingStatus);
+    setShop(shopSettings);
   }, [month]);
 
   const refreshTenants = useCallback(async () => {
@@ -277,6 +300,32 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function updateShopLogo(file: File | null) {
+    await runAction(async () => {
+      let logoDataUrl: string | null = null;
+      if (file) {
+        if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 1_048_576) {
+          throw new Error("Choisis une image PNG, JPEG ou WebP de 1 Mo maximum.");
+        }
+        logoDataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(new Error("La lecture du fichier a échoué."));
+          reader.onload = () => {
+            if (typeof reader.result === "string") resolve(reader.result);
+            else reject(new Error("Le fichier image est invalide."));
+          };
+          reader.readAsDataURL(file);
+        });
+      }
+      const updatedShop = await request<ShopSettings>("/settings/shop", {
+        method: "PATCH",
+        body: JSON.stringify({ logoDataUrl }),
+      });
+      setShop(updatedShop);
+      setMessage(file ? "Le logo de votre boutique a été enregistré." : "Le logo de votre boutique a été supprimé.");
+    });
   }
 
   async function saveService(event: FormEvent<HTMLFormElement>) {
@@ -448,19 +497,20 @@ export default function Home() {
     catalog: { eyebrow: "VOS PRESTATIONS", title: "Catalogue", description: "Gérez les services et tarifs proposés à vos clients." },
     expenses: { eyebrow: "SUIVI FINANCIER", title: "Dépenses", description: "Enregistrez vos frais pour suivre la rentabilité de l'activité." },
     reports: { eyebrow: "ANALYSE", title: "Rapports mensuels", description: "Comparez les recettes et dépenses de votre pressing." },
+    shop: { eyebrow: "IDENTITÉ DE VOTRE BOUTIQUE", title: "Ma boutique", description: "Personnalisez votre espace avec le logo de votre pressing." },
   };
 
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <a className="brand brand-light" href="/"><span className="brand-mark">P</span> pressing<span>OS</span></a>
+        <a className="brand brand-light" href="/"><span className={`brand-mark ${shop.logoDataUrl ? "brand-mark-logo" : ""}`}>{shop.logoDataUrl ? <img src={shop.logoDataUrl} alt={`Logo ${shop.name}`} /> : "P"}</span> pressing<span>OS</span></a>
         <div className="workspace-label">ESPACE DE TRAVAIL</div>
         <nav className="side-nav" aria-label="Navigation principale">
           {NAV_ITEMS.map((item) => <button key={item.id} className={`nav-item ${view === item.id ? "nav-item-active" : ""}`} onClick={() => { setView(item.id); setError(""); }}><span className="nav-icon">{item.icon}</span>{item.label}{item.id === "deposits" && openDeposits > 0 && <span className="nav-count">{openDeposits}</span>}</button>)}
         </nav>
         <div className="sidebar-bottom">
           {billing && <div className="trial-card"><span className="trial-icon">✦</span><strong>{billing.plan === "TRIAL" ? "Période d'essai" : `Offre ${billing.plan}`}</strong><p>{billing.plan === "TRIAL" ? `Jusqu'au ${new Date(billing.expiresAt).toLocaleDateString("fr-FR")}` : "Votre espace est actif"}</p></div>}
-          <div className="profile-row"><span className="avatar">{(email || "P").charAt(0).toUpperCase()}</span><div><strong>Mon pressing</strong><small>{email}</small></div><button className="icon-button light-icon" onClick={signOut} aria-label="Se déconnecter" title="Se déconnecter">↗</button></div>
+          <div className="profile-row"><span className={`avatar ${shop.logoDataUrl ? "avatar-logo" : ""}`}>{shop.logoDataUrl ? <img src={shop.logoDataUrl} alt="" /> : (email || "P").charAt(0).toUpperCase()}</span><div><strong>{shop.name || "Mon pressing"}</strong><small>{email}</small></div><button className="icon-button light-icon" onClick={signOut} aria-label="Se déconnecter" title="Se déconnecter">↗</button></div>
         </div>
       </aside>
       <section className="main-area">
@@ -499,13 +549,27 @@ export default function Home() {
                 <label>Prestation<select value={depositServiceId} onChange={(event) => setDepositServiceId(event.target.value)}><option value="">Choisir un service</option>{services.map((service) => <option key={service.id} value={service.id}>{service.name} · {money(service.priceCents)} FCFA</option>)}</select></label>
                 <label>Date de retrait <span className="optional">Facultatif</span><input type="datetime-local" value={pickupAt} onChange={(event) => setPickupAt(event.target.value)} /></label>
                 <label>Casier / repère <span className="optional">Facultatif</span><input value={locker} onChange={(event) => setLocker(event.target.value)} /></label>
-                <label className="check-row"><input type="checkbox" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> Paiement reçu</label>
+                <fieldset className="payment-fieldset">
+                  <legend>Paiement</legend>
+                  <div className="payment-choice-row">
+                    <label className={`payment-choice ${paid ? "payment-choice-selected" : ""}`}>
+                      <input type="radio" name="new-deposit-payment" checked={paid} onChange={() => setPaid(true)} />
+                      <span className="payment-choice-indicator" aria-hidden="true">{paid ? "✓" : ""}</span>
+                      <span><strong>Payé</strong><small>Le client a réglé</small></span>
+                    </label>
+                    <label className={`payment-choice ${!paid ? "payment-choice-selected" : ""}`}>
+                      <input type="radio" name="new-deposit-payment" checked={!paid} onChange={() => setPaid(false)} />
+                      <span className="payment-choice-indicator" aria-hidden="true">{!paid ? "✓" : ""}</span>
+                      <span><strong>Non payé</strong><small>À régler au retrait</small></span>
+                    </label>
+                  </div>
+                </fieldset>
                 <button className="button button-primary" disabled={loading}>Enregistrer le dépôt</button>
               </form>
             </section>
             <section className="content-card">
               <div className="section-title"><div><p className="eyebrow">ATELIER</p><h2>Tous les dépôts</h2></div><span className="count-pill">{deposits.length}</span></div>
-              {deposits.length ? <div className="table-wrap"><table><thead><tr><th>Client</th><th>Téléphone</th><th>État</th><th>Montant</th><th>Paiement</th><th>Action</th></tr></thead><tbody>{deposits.map((deposit) => <DepositRow key={deposit.id} deposit={deposit} onAdvance={(item) => updateDeposit(item, { status: STATUS_ORDER[STATUS_ORDER.indexOf(item.status) + 1] })} onTogglePaid={(item) => updateDeposit(item, { paid: !item.paid })} />)}</tbody></table></div> : <p className="empty-state">Aucun dépôt pour le moment. Enregistrez la première commande.</p>}
+              {deposits.length ? <div className="table-wrap"><table><thead><tr><th>Client</th><th>Téléphone</th><th>État</th><th>Montant</th><th>Paiement</th><th>Action</th></tr></thead><tbody>{deposits.map((deposit) => <DepositRow key={deposit.id} deposit={deposit} onAdvance={(item) => updateDeposit(item, { status: STATUS_ORDER[STATUS_ORDER.indexOf(item.status) + 1] })} onPaymentChange={(item, isPaid) => updateDeposit(item, { paid: isPaid })} />)}</tbody></table></div> : <p className="empty-state">Aucun dépôt pour le moment. Enregistrez la première commande.</p>}
             </section>
           </div>}
 
@@ -541,6 +605,34 @@ export default function Home() {
             <h3 className="report-month">{monthLabel(month)}</h3>
             <div className="stats-grid report-stats"><StatCard label="Chiffre d'affaires" value={`${money(report?.revenueCents ?? 0)} FCFA`} detail="Dépôts enregistrés" /><StatCard label="Dépenses" value={`${money(report?.expensesCents ?? 0)} FCFA`} detail="Dépenses déclarées" tone="warm" /><StatCard label="Résultat net" value={`${money(report?.profitCents ?? 0)} FCFA`} detail="Chiffre d'affaires − dépenses" tone="green" /></div>
             <div className="report-services"><div className="section-title"><div><p className="eyebrow">ACTIVITÉ</p><h2>Prestations les plus demandées</h2></div></div>{report?.topServices.length ? report.topServices.map((service, index) => <div className="popular-row" key={service.name}><span className="popular-rank">{String(index + 1).padStart(2, "0")}</span><strong>{service.name}</strong><span>{service.count} dépôt(s)</span></div>) : <p className="empty-state">Aucune prestation enregistrée pour ce mois.</p>}</div>
+          </section>}
+
+          {view === "shop" && <section className="content-card shop-settings-card">
+            <div className="section-title"><div><p className="eyebrow">IMAGE DE MARQUE</p><h2>Logo de la boutique</h2></div></div>
+            <p className="muted">Ajoutez le logo de {shop.name || "votre boutique"}. Il apparaîtra dans le menu de votre espace professionnel.</p>
+            <div className="shop-logo-editor">
+              <div className="shop-logo-preview">
+                {shop.logoDataUrl ? <img src={shop.logoDataUrl} alt={`Logo ${shop.name}`} /> : <span>{(shop.name || "P").charAt(0).toUpperCase()}</span>}
+              </div>
+              <div className="shop-logo-actions">
+                <label className="button button-primary shop-logo-upload">
+                  {shop.logoDataUrl ? "Remplacer le logo" : "Importer un logo"}
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    aria-label="Importer le logo de la boutique"
+                    disabled={loading}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] ?? null;
+                      event.target.value = "";
+                      if (file) void updateShopLogo(file);
+                    }}
+                  />
+                </label>
+                {shop.logoDataUrl && <button className="button button-secondary" disabled={loading} onClick={() => void updateShopLogo(null)}>Retirer le logo</button>}
+                <span className="muted">PNG, JPEG ou WebP · 1 Mo maximum</span>
+              </div>
+            </div>
           </section>}
         </div>
       </section>

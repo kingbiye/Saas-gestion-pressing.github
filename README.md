@@ -46,6 +46,7 @@ workspaces. La CI GitHub exécute aussi cette vérification.
 - `GET|POST /api/deposits`, `PATCH /api/deposits/:id`
 - `GET|POST /api/expenses`
 - `GET /api/reports/monthly`
+- `GET|PATCH /api/settings/shop` (logo PNG, JPEG ou WebP, 1 Mo maximum)
 - `GET /api/billing/status`
 - `GET /api/health`
 
@@ -74,7 +75,9 @@ utiliser les routes métier.
 6. Générer une valeur longue et aléatoire pour `AUTH_SECRET`. Les secrets
    Supabase et administrateur doivent rester dans les variables Vercel, jamais
    dans une variable `NEXT_PUBLIC_*` ni dans Git.
-7. Appliquer le schéma à la base depuis un environnement de confiance :
+7. Appliquer le schéma à la base depuis un environnement de confiance. Le champ
+   de logo de boutique est ajouté de façon nullable ; cette commande ne supprime
+   pas les données existantes :
 
    ```bash
    npm run db:push

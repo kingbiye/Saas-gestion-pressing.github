@@ -1,10 +1,32 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+import { existsSync } from "node:fs";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { createHash, createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
+import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 
-const prisma = new PrismaClient();
+const currentEnvPath = path.resolve(process.cwd(), ".env");
+const monorepoEnvPath = path.resolve(process.cwd(), "..", "..", ".env");
+dotenv.config({ path: existsSync(currentEnvPath) ? currentEnvPath : monorepoEnvPath });
+
+const runtimeDatabaseUrl = process.env.DATABASE_URL
+  ? new URL(process.env.DATABASE_URL)
+  : undefined;
+if (runtimeDatabaseUrl?.hostname.endsWith(".pooler.supabase.com")) {
+  runtimeDatabaseUrl.searchParams.set("connection_limit", "1");
+  if (runtimeDatabaseUrl.port === "6543") {
+    runtimeDatabaseUrl.searchParams.set("pgbouncer", "true");
+  }
+}
+
+const globalForPrisma = globalThis as typeof globalThis & { pressingPrisma?: PrismaClient };
+const prisma = globalForPrisma.pressingPrisma ?? new PrismaClient(
+  runtimeDatabaseUrl ? { datasources: { db: { url: runtimeDatabaseUrl.toString() } } } : undefined,
+);
+if (process.env.NODE_ENV !== "production") globalForPrisma.pressingPrisma = prisma;
+const maxRequestBytes = 1_500_000;
+const maxLogoBytes = 1_048_576;
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 const trialDays = Number(process.env.TRIAL_DAYS ?? 10);
 const maxLoginAttempts = 5;
@@ -23,6 +45,12 @@ export interface ApiRequest extends AsyncIterable<string | Uint8Array> {
 export interface ApiResponse {
   writeHead(status: number, headers?: Record<string, string>): unknown;
   end(chunk?: string): unknown;
+}
+
+class ApiRequestError extends Error {
+  constructor(readonly status: number, readonly code: string) {
+    super(code);
+  }
 }
 
 function json(res: ApiResponse, status: number, data: unknown) {
@@ -69,7 +97,13 @@ function verifyToken(token: string): { sub: string; role: string } | null {
 
 async function body(req: ApiRequest): Promise<Record<string, unknown>> {
   let raw = "";
-  for await (const chunk of req) raw += chunk;
+  let size = 0;
+  for await (const chunk of req) {
+    const text = typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+    size += Buffer.byteLength(text);
+    if (size > maxRequestBytes) throw new ApiRequestError(413, "PAYLOAD_TOO_LARGE");
+    raw += text;
+  }
   if (!raw) return {};
   const parsed: unknown = JSON.parse(raw);
   return parsed && typeof parsed === "object" && !Array.isArray(parsed)
@@ -99,7 +133,14 @@ async function session(req: ApiRequest, res: ApiResponse) {
   const rawToken = (Array.isArray(rawAuthorization) ? rawAuthorization[0] : rawAuthorization)?.replace(/^Bearer\s+/i, "");
   const token = rawToken ? verifyToken(rawToken) : null;
   const user = token?.role !== "PLATFORM_ADMIN" && token?.sub
-    ? await prisma.user.findUnique({ where: { id: token.sub }, include: { tenant: true } })
+    ? await prisma.user.findUnique({
+      where: { id: token.sub },
+      include: {
+        tenant: {
+          select: { id: true, isActive: true, trialEndsAt: true, subscriptionEndsAt: true, plan: true },
+        },
+      },
+    })
     : null;
   const tenant = user?.tenant;
   if (!user || !tenant) {
@@ -178,7 +219,7 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
     const input = await body(req);
     const email = String(input.email ?? "").trim().toLowerCase();
     if (!loginAllowed(email)) return json(res, 429, { error: "TOO_MANY_ATTEMPTS" });
-    const user = await prisma.user.findUnique({ where: { email }, include: { tenant: true } });
+    const user = await prisma.user.findUnique({ where: { email } });
     if (!user || !verifyPassword(String(input.password ?? ""), user.password)) {
       recordLoginFailure(email);
       return json(res, 401, { error: "INVALID_CREDENTIALS" });
@@ -238,7 +279,14 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
   if (url.pathname === "/admin/tenants" && req.method === "GET") {
     if (!isPlatformAdmin(req)) return json(res, 403, { error: "PLATFORM_ADMIN_REQUIRED" });
     return json(res, 200, await prisma.tenant.findMany({
-      include: { _count: { select: { users: true, deposits: true } } },
+      select: {
+        id: true,
+        name: true,
+        plan: true,
+        isActive: true,
+        createdAt: true,
+        _count: { select: { users: true, deposits: true } },
+      },
       orderBy: { createdAt: "desc" },
     }));
   }
@@ -250,6 +298,7 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
     return json(res, 200, await prisma.tenant.update({
       where: { id: tenantMatch[1] },
       data: { isActive: input.isActive },
+      select: { id: true, name: true, plan: true, isActive: true, createdAt: true },
     }));
   }
   if (tenantMatch && req.method === "DELETE") {
@@ -260,6 +309,41 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
 
   const current = await session(req, res);
   if (!current) return;
+  if (url.pathname === "/settings/shop" && req.method === "GET") {
+    const shop = await prisma.tenant.findUnique({
+      where: { id: current.tenant.id },
+      select: { name: true, logoDataUrl: true },
+    });
+    if (!shop) return json(res, 404, { error: "SHOP_NOT_FOUND" });
+    return json(res, 200, shop);
+  }
+  if (url.pathname === "/settings/shop" && req.method === "PATCH") {
+    const input = await body(req);
+    const logoInput = input.logoDataUrl;
+    if (logoInput !== null && typeof logoInput !== "string") {
+      return json(res, 400, { error: "INVALID_LOGO" });
+    }
+    let logoDataUrl: string | null = typeof logoInput === "string" ? logoInput : null;
+    if (logoDataUrl !== null) {
+      const match = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(logoDataUrl);
+      if (!match) return json(res, 400, { error: "INVALID_LOGO" });
+      const image = Buffer.from(match[2], "base64");
+      if (image.toString("base64") !== match[2]) return json(res, 400, { error: "INVALID_LOGO" });
+      const isPng = match[1] === "png" && image.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+      const isJpeg = match[1] === "jpeg" && image.subarray(0, 3).equals(Buffer.from([255, 216, 255]));
+      const isWebp = match[1] === "webp" && image.toString("ascii", 0, 4) === "RIFF" && image.toString("ascii", 8, 12) === "WEBP";
+      if (!image.length || image.length > maxLogoBytes || !(isPng || isJpeg || isWebp)) {
+        return json(res, 400, { error: "INVALID_LOGO" });
+      }
+      logoDataUrl = `data:image/${match[1]};base64,${image.toString("base64")}`;
+    }
+    const tenant = await prisma.tenant.update({
+      where: { id: current.tenant.id },
+      data: { logoDataUrl },
+      select: { name: true, logoDataUrl: true },
+    });
+    return json(res, 200, tenant);
+  }
   if (url.pathname === "/catalog" && req.method === "GET") {
     return json(res, 200, await prisma.service.findMany({ where: { tenantId: current.tenant.id } }));
   }
@@ -411,9 +495,20 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
   return json(res, 404, { error: "NOT_FOUND" });
 }
 
+export function handleRequestError(error: unknown, res: ApiResponse) {
+  if (error instanceof ApiRequestError) {
+    return json(res, error.status, { error: error.code });
+  }
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2024") {
+    return json(res, 503, { error: "DATABASE_BUSY" });
+  }
+  console.error("API request failed:", error);
+  return json(res, 500, { error: "INTERNAL_SERVER_ERROR" });
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const port = Number(process.env.PORT ?? 4000);
   createServer((req, res) => {
-    handleRequest(req, res).catch(() => json(res, 400, { error: "INVALID_REQUEST" }));
+    handleRequest(req, res).catch((error: unknown) => handleRequestError(error, res));
   }).listen(port, () => console.log(`API listening on ${port}`));
 }
