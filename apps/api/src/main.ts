@@ -180,11 +180,13 @@ function getAppOrigin(): string {
 }
 
 function unwrapSasPayResponse(payload: unknown): unknown {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload) || !("success" in payload)) {
-    return payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
+  if ("success" in payload && payload.success === false) {
+    throw new ApiRequestError(502, "PAYMENT_PROVIDER_ERROR");
   }
-  if (payload.success !== true) throw new ApiRequestError(502, "PAYMENT_PROVIDER_ERROR");
-  return "data" in payload ? payload.data : undefined;
+  if ("data" in payload) return payload.data;
+  if ("success" in payload && payload.success === true) return undefined;
+  return payload;
 }
 
 async function getSasPayCheckoutStatus(providerSessionId: string) {
