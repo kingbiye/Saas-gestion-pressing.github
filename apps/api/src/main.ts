@@ -36,11 +36,6 @@ const developmentAuthSecret = randomBytes(32).toString("hex");
 const allowedOrigin = process.env.WEB_ORIGIN ?? "http://localhost:3000";
 const platformAdminEmail = process.env.PLATFORM_ADMIN_EMAIL?.trim().toLowerCase();
 const platformAdminPassword = process.env.PLATFORM_ADMIN_PASSWORD;
-const saspayApiKey = process.env.SASPAY_API_KEY?.trim();
-const appOrigin = process.env.APP_ORIGIN ?? process.env.WEB_ORIGIN;
-const subscriptionPriceXof = 5000;
-const subscriptionDurationDays = 30;
-const saspayApiUrl = "https://api.saspay.me/api/v1";
 
 export interface ApiRequest extends AsyncIterable<string | Uint8Array> {
   method?: string;
@@ -165,111 +160,6 @@ async function session(req: ApiRequest, res: ApiResponse, allowExpired = false) 
   return { user, tenant };
 }
 
-function getAppOrigin(): string {
-  if (!appOrigin) throw new ApiRequestError(503, "BILLING_NOT_CONFIGURED");
-  let parsed: URL;
-  try {
-    parsed = new URL(appOrigin);
-  } catch {
-    throw new ApiRequestError(503, "BILLING_NOT_CONFIGURED");
-  }
-  if (parsed.origin !== appOrigin.replace(/\/$/, "") || (process.env.NODE_ENV === "production" && parsed.protocol !== "https:")) {
-    throw new ApiRequestError(503, "BILLING_NOT_CONFIGURED");
-  }
-  return parsed.origin;
-}
-
-function unwrapSasPayResponse(payload: unknown): unknown {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
-  if ("success" in payload && payload.success === false) {
-    throw new ApiRequestError(502, "PAYMENT_PROVIDER_ERROR");
-  }
-  if ("data" in payload) return payload.data;
-  if ("success" in payload && payload.success === true) return undefined;
-  return payload;
-}
-
-async function getSasPayCheckoutStatus(providerSessionId: string) {
-  if (!saspayApiKey) throw new ApiRequestError(503, "BILLING_NOT_CONFIGURED");
-  let response: Response;
-  try {
-    response = await fetch(`${saspayApiUrl}/checkout-sessions/${encodeURIComponent(providerSessionId)}/status/`, {
-      headers: { Authorization: `Bearer ${saspayApiKey}` },
-      signal: AbortSignal.timeout(10_000),
-    });
-  } catch (error) {
-    console.error("SasPay status request failed:", error);
-    throw new ApiRequestError(502, "PAYMENT_PROVIDER_UNAVAILABLE");
-  }
-  if (!response.ok) {
-    console.error("SasPay status request returned HTTP", response.status);
-    throw new ApiRequestError(502, "PAYMENT_PROVIDER_ERROR");
-  }
-  let payload: unknown;
-  try {
-    payload = await response.json();
-  } catch {
-    throw new ApiRequestError(502, "PAYMENT_PROVIDER_INVALID_RESPONSE");
-  }
-  const result = unwrapSasPayResponse(payload);
-  if (!result || typeof result !== "object" || !("id" in result) || result.id !== providerSessionId) {
-    throw new ApiRequestError(502, "PAYMENT_PROVIDER_INVALID_RESPONSE");
-  }
-  return result as {
-    id: string;
-    status?: string;
-    transaction_status?: string | null;
-  };
-}
-
-async function reconcileBillingPayment(paymentId: string, providerStatus: Awaited<ReturnType<typeof getSasPayCheckoutStatus>>) {
-  if (providerStatus.status === "PAID" && providerStatus.transaction_status === "SUCCESS") {
-    await prisma.$transaction(async (transaction) => {
-      const payment = await transaction.billingPayment.findUnique({ where: { id: paymentId } });
-      if (!payment || payment.status === "PAID") return;
-      const claimed = await transaction.billingPayment.updateMany({
-        where: { id: payment.id, status: { not: "PAID" } },
-        data: { status: "PAID", paidAt: new Date() },
-      });
-      if (!claimed.count) return;
-      const tenant = await transaction.tenant.findUnique({
-        where: { id: payment.tenantId },
-        select: { trialEndsAt: true, subscriptionEndsAt: true },
-      });
-      if (!tenant) throw new ApiRequestError(404, "SHOP_NOT_FOUND");
-      const accessEndsAt = tenant.subscriptionEndsAt ?? tenant.trialEndsAt;
-      const startAt = Math.max(Date.now(), accessEndsAt.getTime());
-      await transaction.tenant.update({
-        where: { id: payment.tenantId },
-        data: {
-          plan: "MONTHLY",
-          subscriptionEndsAt: new Date(startAt + payment.durationDays * 86400000),
-        },
-      });
-    });
-  } else if (providerStatus.status === "EXPIRED"
-    || providerStatus.status === "CANCELLED"
-    || providerStatus.status === "FAILED"
-    || providerStatus.transaction_status === "FAILED") {
-    await prisma.billingPayment.updateMany({
-      where: { id: paymentId, status: { not: "PAID" } },
-      data: {
-        status: providerStatus.status === "FAILED" || providerStatus.transaction_status === "FAILED"
-          ? "FAILED"
-          : providerStatus.status,
-      },
-    });
-  }
-  const payment = await prisma.billingPayment.findUnique({ where: { id: paymentId } });
-  if (!payment) throw new ApiRequestError(404, "BILLING_PAYMENT_NOT_FOUND");
-  return payment;
-}
-
-function redirect(res: ApiResponse, location: string) {
-  res.writeHead(303, { location, "cache-control": "no-store" });
-  res.end();
-}
-
 function isPlatformAdmin(req: ApiRequest): boolean {
   const rawAuthorization = req.headers.authorization;
   const rawToken = (Array.isArray(rawAuthorization) ? rawAuthorization[0] : rawAuthorization)?.replace(/^Bearer\s+/i, "");
@@ -305,17 +195,10 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
   }
 
   if (req.method === "GET" && url.pathname === "/health") return json(res, 200, { status: "ok" });
-
-  if (req.method === "GET" && url.pathname === "/billing/return") {
-    const paymentId = url.searchParams.get("payment");
-    if (!paymentId) return json(res, 400, { error: "BILLING_PAYMENT_REQUIRED" });
-    const payment = await prisma.billingPayment.findUnique({ where: { id: paymentId } });
-    if (!payment?.providerSessionId) return json(res, 404, { error: "BILLING_PAYMENT_NOT_FOUND" });
-    const providerStatus = await getSasPayCheckoutStatus(payment.providerSessionId);
-    const updated = await reconcileBillingPayment(payment.id, providerStatus);
-    const result = updated.status === "PAID" ? "success" : "pending";
-    const pendingPayment = updated.status === "PAID" ? "" : `&payment_id=${encodeURIComponent(payment.id)}`;
-    return redirect(res, `${getAppOrigin()}/?billing_payment=${result}${pendingPayment}`);
+  if (url.pathname === "/billing/return"
+    || url.pathname === "/billing/checkout"
+    || url.pathname.startsWith("/billing/checkout/")) {
+    return json(res, 410, { error: "ONLINE_PAYMENT_DISABLED" });
   }
 
   if (req.method === "POST" && url.pathname === "/auth/register") {
@@ -431,92 +314,10 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
     return json(res, 200, { deleted: true });
   }
 
-  const billingCheckoutStatusMatch = url.pathname.match(/^\/billing\/checkout\/([^/]+)\/status$/);
-  const isBillingRoute = url.pathname === "/billing/status"
-    || url.pathname === "/billing/checkout"
-    || Boolean(billingCheckoutStatusMatch);
+  const isBillingRoute = url.pathname === "/billing/status";
   const isShopSettingsRead = url.pathname === "/settings/shop" && req.method === "GET";
   const current = await session(req, res, isBillingRoute || isShopSettingsRead);
   if (!current) return;
-  if (url.pathname === "/billing/checkout" && req.method === "POST") {
-    if (!saspayApiKey) return json(res, 503, { error: "BILLING_NOT_CONFIGURED" });
-    const payment = await prisma.billingPayment.create({
-      data: {
-        tenantId: current.tenant.id,
-        amountXof: subscriptionPriceXof,
-        durationDays: subscriptionDurationDays,
-      },
-    });
-    const returnUrl = `${getAppOrigin()}/api/billing/return?payment=${encodeURIComponent(payment.id)}`;
-    let response: Response;
-    try {
-      response = await fetch(`${saspayApiUrl}/checkout-sessions/`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${saspayApiKey}`,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          amount: `${subscriptionPriceXof}.00`,
-          currency: "XOF",
-          description: `Abonnement Pressing OS - ${subscriptionDurationDays} jours`,
-          customer_email: current.user.email,
-          customer_name: current.tenant.name,
-          return_url: returnUrl,
-          metadata: { billing_payment_id: payment.id },
-        }),
-        signal: AbortSignal.timeout(10_000),
-      });
-    } catch (error) {
-      console.error("SasPay checkout creation failed:", error);
-      await prisma.billingPayment.update({ where: { id: payment.id }, data: { status: "FAILED" } });
-      throw new ApiRequestError(502, "PAYMENT_PROVIDER_UNAVAILABLE");
-    }
-    if (!response.ok) {
-      console.error("SasPay checkout creation returned HTTP", response.status);
-      await prisma.billingPayment.update({ where: { id: payment.id }, data: { status: "FAILED" } });
-      return json(res, 502, { error: "PAYMENT_PROVIDER_ERROR" });
-    }
-    let checkoutPayload: unknown;
-    try {
-      checkoutPayload = await response.json();
-    } catch {
-      await prisma.billingPayment.update({ where: { id: payment.id }, data: { status: "FAILED" } });
-      return json(res, 502, { error: "PAYMENT_PROVIDER_INVALID_RESPONSE" });
-    }
-    const checkout = unwrapSasPayResponse(checkoutPayload);
-    if (!checkout || typeof checkout !== "object"
-      || !("id" in checkout) || typeof checkout.id !== "string"
-      || !("checkout_url" in checkout) || typeof checkout.checkout_url !== "string") {
-      await prisma.billingPayment.update({ where: { id: payment.id }, data: { status: "FAILED" } });
-      return json(res, 502, { error: "PAYMENT_PROVIDER_INVALID_RESPONSE" });
-    }
-    let checkoutUrl: URL;
-    try {
-      checkoutUrl = new URL(checkout.checkout_url);
-    } catch {
-      await prisma.billingPayment.update({ where: { id: payment.id }, data: { status: "FAILED" } });
-      return json(res, 502, { error: "PAYMENT_PROVIDER_INVALID_RESPONSE" });
-    }
-    if (checkoutUrl.protocol !== "https:" || checkoutUrl.hostname !== "pay.saspay.me") {
-      await prisma.billingPayment.update({ where: { id: payment.id }, data: { status: "FAILED" } });
-      return json(res, 502, { error: "PAYMENT_PROVIDER_INVALID_RESPONSE" });
-    }
-    await prisma.billingPayment.update({
-      where: { id: payment.id },
-      data: { providerSessionId: checkout.id },
-    });
-    return json(res, 201, { checkoutUrl: checkoutUrl.toString() });
-  }
-  if (billingCheckoutStatusMatch && req.method === "GET") {
-    const payment = await prisma.billingPayment.findFirst({
-      where: { id: billingCheckoutStatusMatch[1], tenantId: current.tenant.id },
-    });
-    if (!payment?.providerSessionId) return json(res, 404, { error: "BILLING_PAYMENT_NOT_FOUND" });
-    const providerStatus = await getSasPayCheckoutStatus(payment.providerSessionId);
-    const updated = await reconcileBillingPayment(payment.id, providerStatus);
-    return json(res, 200, { status: updated.status, paidAt: updated.paidAt });
-  }
   if (url.pathname === "/settings/shop" && req.method === "GET") {
     const shop = await prisma.tenant.findUnique({
       where: { id: current.tenant.id },
@@ -704,18 +505,10 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
   }
   if (url.pathname === "/billing/status" && req.method === "GET") {
     const expiresAt = current.tenant.subscriptionEndsAt ?? current.tenant.trialEndsAt;
-    const pendingPayment = await prisma.billingPayment.findFirst({
-      where: { tenantId: current.tenant.id, status: "PENDING", providerSessionId: { not: null } },
-      orderBy: { createdAt: "desc" },
-      select: { id: true },
-    });
     return json(res, 200, {
       plan: current.tenant.plan,
       expiresAt,
       active: expiresAt.getTime() > Date.now(),
-      paymentPending: current.tenant.plan === "TRIAL",
-      checkoutAvailable: Boolean(saspayApiKey && appOrigin),
-      pendingPaymentId: pendingPayment?.id ?? null,
     });
   }
   return json(res, 404, { error: "NOT_FOUND" });

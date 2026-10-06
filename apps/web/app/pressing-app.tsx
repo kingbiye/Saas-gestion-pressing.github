@@ -27,9 +27,6 @@ type Billing = {
   plan: string;
   expiresAt: string;
   active: boolean;
-  paymentPending: boolean;
-  checkoutAvailable: boolean;
-  pendingPaymentId: string | null;
 };
 type AdminTenant = {
   id: string;
@@ -115,10 +112,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       INVALID_LOGO: "Choisis une image PNG, JPEG ou WebP valide de 1 Mo maximum.",
       INVALID_COLOR_THEME: "La couleur choisie n’est pas disponible. Sélectionne une des couleurs proposées.",
       PAYLOAD_TOO_LARGE: "Le fichier est trop volumineux. La taille maximale est de 1 Mo.",
-      BILLING_NOT_CONFIGURED: "Le paiement en ligne n’est pas encore configuré. Contacte l’administrateur.",
-      PAYMENT_PROVIDER_UNAVAILABLE: "SasPay ne répond pas pour le moment. Réessaie dans quelques instants.",
-      PAYMENT_PROVIDER_ERROR: "SasPay n’a pas pu préparer le paiement. Réessaie dans quelques instants.",
-      PAYMENT_PROVIDER_INVALID_RESPONSE: "La réponse de SasPay est invalide. Contacte l’administrateur.",
+      TENANT_SUSPENDED: "Cette boutique a été bloquée par l’administrateur de la plateforme.",
     };
     const message = knownErrors[apiError] || apiError || `La requête a échoué (${response.status}).`;
     throw new Error(message);
@@ -191,7 +185,6 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [report, setReport] = useState<Report | null>(null);
   const [billing, setBilling] = useState<Billing | null>(null);
-  const [pendingPaymentId, setPendingPaymentId] = useState("");
   const [shop, setShop] = useState<ShopSettings>({ name: "", logoDataUrl: null, colorTheme: "forest" });
   const shopSettingsRevision = useRef(0);
   const shopSettingsWrites = useRef(0);
@@ -217,7 +210,6 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
       request<ShopSettings>("/settings/shop"),
     ]);
     setBilling(billingStatus);
-    setPendingPaymentId(billingStatus.pendingPaymentId ?? "");
     if (shopRevisionAtStart === shopSettingsRevision.current && shopSettingsWrites.current === 0) {
       setShop(preferredShopTheme.current
         ? { ...shopSettings, colorTheme: preferredShopTheme.current }
@@ -265,13 +257,6 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
     if (token) {
       setResetToken(token);
       setForgotMode(true);
-    }
-    const billingPayment = new URLSearchParams(window.location.search).get("billing_payment");
-    if (billingPayment === "success") {
-      setMessage("Paiement confirmé. Votre abonnement est maintenant actif.");
-    } else if (billingPayment === "pending") {
-      setMessage("Le paiement n’est pas encore confirmé. Actualisez votre espace dans quelques instants.");
-      setPendingPaymentId(new URLSearchParams(window.location.search).get("payment_id") ?? "");
     }
     if (!readToken("pressing_token")) return;
     setAuthenticated(true);
@@ -362,33 +347,6 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
     } finally {
       setLoading(false);
     }
-  }
-
-  async function startSubscription() {
-    await runAction(async () => {
-      const checkout = await request<{ checkoutUrl: string }>("/billing/checkout", {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
-      window.location.assign(checkout.checkoutUrl);
-    });
-  }
-
-  async function checkSubscriptionPayment() {
-    if (!pendingPaymentId) return;
-    await runAction(async () => {
-      const result = await request<{ status: string }>(`/billing/checkout/${encodeURIComponent(pendingPaymentId)}/status`);
-      if (result.status === "PAID") {
-        setPendingPaymentId("");
-        setMessage("Paiement confirmé. Votre abonnement est maintenant actif.");
-        await refreshBusiness();
-      } else if (result.status === "PENDING") {
-        setMessage("Le paiement est toujours en attente de confirmation. Réessaie dans quelques instants.");
-      } else {
-        setPendingPaymentId("");
-        setMessage("Ce paiement n’a pas abouti. Tu peux relancer un nouveau paiement.");
-      }
-    });
   }
 
   async function updateShopLogo(file: File | null) {
@@ -520,6 +478,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   }
 
   async function updateTenant(tenant: AdminTenant) {
+    if (tenant.isActive && !window.confirm(`Bloquer ${tenant.name} ? Ses utilisateurs perdront immédiatement l'accès, mais leurs données seront conservées.`)) return;
     await runAction(async () => {
       await request(`/admin/tenants/${tenant.id}`, {
         method: "PATCH",
@@ -598,7 +557,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
       <main className="admin-shell">
         <header className="admin-topbar"><a className="brand" href="/"><span className="brand-mark">P</span> pressing<span>OS</span></a><span className="admin-chip">Administration plateforme</span><button className="button button-secondary" onClick={signOut}>Se déconnecter</button></header>
         <section className="workspace admin-workspace">
-          <PageHeading eyebrow="SUPERVISION" title="Gestion des boutiques" description="Consultez et gérez les espaces inscrits sur la plateforme." />
+          <PageHeading eyebrow="SUPERVISION" title="Gestion des boutiques" description="Bloquez temporairement l'accès d'une boutique sans supprimer ses données, ou réactivez-la à tout moment." />
           <ErrorNotice message={error} onClose={() => setError("")} />
           <div className="stats-grid">
             <StatCard label="Boutiques" value={String(tenants.length)} detail="Espaces enregistrés" />
@@ -607,7 +566,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
           </div>
           <section className="content-card">
             <div className="section-title"><div><p className="eyebrow">COMPTES CLIENTS</p><h2>Boutiques inscrites</h2></div><span className="count-pill">{tenants.length}</span></div>
-            {tenants.length ? <div className="table-wrap"><table><thead><tr><th>Boutique</th><th>Activité</th><th>Plan</th><th>État</th><th>Actions</th></tr></thead><tbody>{tenants.map((tenant) => <tr key={tenant.id}><td><strong>{tenant.name}</strong><small>{tenant._count.users} utilisateur(s) · {tenant._count.deposits} dépôt(s)</small></td><td>{new Date(tenant.createdAt).toLocaleDateString("fr-FR")}</td><td>{tenant.plan}</td><td><span className={`status ${tenant.isActive ? "status-ready" : "status-received"}`}>{tenant.isActive ? "Actif" : "Suspendu"}</span></td><td className="action-cell"><button className="button button-small button-secondary" onClick={() => updateTenant(tenant)}>{tenant.isActive ? "Suspendre" : "Réactiver"}</button><button className="button button-small button-danger" onClick={() => removeTenant(tenant)}>Supprimer</button></td></tr>)}</tbody></table></div> : <p className="empty-state">Aucune boutique enregistrée pour le moment.</p>}
+            {tenants.length ? <div className="table-wrap"><table><thead><tr><th>Boutique</th><th>Activité</th><th>Plan</th><th>État</th><th>Actions</th></tr></thead><tbody>{tenants.map((tenant) => <tr key={tenant.id}><td><strong>{tenant.name}</strong><small>{tenant._count.users} utilisateur(s) · {tenant._count.deposits} dépôt(s)</small></td><td>{new Date(tenant.createdAt).toLocaleDateString("fr-FR")}</td><td>{tenant.plan}</td><td><span className={`status ${tenant.isActive ? "status-ready" : "status-received"}`}>{tenant.isActive ? "En service" : "Bloquée"}</span></td><td className="action-cell"><button className={`button button-small ${tenant.isActive ? "button-danger" : "button-secondary"}`} onClick={() => updateTenant(tenant)}>{tenant.isActive ? "Bloquer la boutique" : "Débloquer la boutique"}</button><button className="button button-small button-danger" onClick={() => removeTenant(tenant)}>Supprimer</button></td></tr>)}</tbody></table></div> : <p className="empty-state">Aucune boutique enregistrée pour le moment.</p>}
           </section>
         </section>
       </main>
@@ -664,30 +623,16 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
             {billing && <section className="content-card subscription-card">
               <div>
                 <p className="eyebrow">ABONNEMENT</p>
-                <h2>{billing.paymentPending ? "Votre période d’essai" : "Votre abonnement Pressing OS"}</h2>
+                <h2>{billing.plan === "TRIAL" ? "Votre période d’essai" : "Votre abonnement Pressing OS"}</h2>
                 <p className="muted">
-                  {billing.paymentPending
+                  {billing.plan === "TRIAL"
                     ? `Essai gratuit jusqu’au ${new Date(billing.expiresAt).toLocaleDateString("fr-FR")}.`
                     : `Accès ${billing.active ? "actif" : "expiré"}${billing.active ? ` jusqu’au ${new Date(billing.expiresAt).toLocaleDateString("fr-FR")}` : ""}.`}
-                  {" "}Un paiement de 5 000 FCFA prolonge l’accès de 30 jours.
+                  {" "}Pour renouveler votre accès, contactez l’administrateur de la plateforme. Le paiement en ligne est temporairement indisponible.
                 </p>
               </div>
               <div className="subscription-actions">
-                <button
-                  className="button button-primary"
-                  onClick={startSubscription}
-                  disabled={loading || !billing.checkoutAvailable}
-                >
-                  {loading ? "Préparation…" : "Payer 5 000 FCFA"}
-                </button>
-                {pendingPaymentId && <button
-                  className="button button-secondary"
-                  onClick={checkSubscriptionPayment}
-                  disabled={loading}
-                >
-                  Vérifier le paiement
-                </button>}
-                {!billing.checkoutAvailable && <p className="subscription-unavailable">Le paiement SasPay n’est pas encore configuré.</p>}
+                <p className="subscription-unavailable">Renouvellement manuel auprès de l’administrateur</p>
               </div>
             </section>}
             <div className="stats-grid">
@@ -704,7 +649,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
               <section className="content-card">
                 <div className="section-title"><div><p className="eyebrow">RÉSUMÉ DU MOIS</p><h2>{monthLabel(month)}</h2></div><button className="button button-small button-secondary" onClick={() => setView("reports")}>Rapport</button></div>
                 <div className="summary-list"><div><span>Prestations enregistrées</span><strong>{report?.topServices.reduce((sum, service) => sum + service.count, 0) ?? 0}</strong></div><div><span>Commandes à retirer</span><strong>{readyDeposits}</strong></div><div><span>Services au catalogue</span><strong>{services.length}</strong></div></div>
-                {billing?.paymentPending && <p className="trial-note">Votre période d’essai se termine le {new Date(billing.expiresAt).toLocaleDateString("fr-FR")}.</p>}
+                {billing?.plan === "TRIAL" && <p className="trial-note">Votre période d’essai se termine le {new Date(billing.expiresAt).toLocaleDateString("fr-FR")}.</p>}
               </section>
             </div>
           </>}

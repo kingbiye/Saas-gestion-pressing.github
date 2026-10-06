@@ -52,8 +52,7 @@ workspaces. La CI GitHub exécute aussi cette vérification.
 - `GET|POST /api/expenses`
 - `GET /api/reports/monthly`
 - `GET|PATCH /api/settings/shop` (logo PNG, JPEG ou WebP, 1 Mo maximum)
-- `GET /api/billing/status`, `POST /api/billing/checkout`
-- `GET /api/billing/checkout/:id/status`
+- `GET /api/billing/status`
 - `GET /api/health`
 
 Les routes métier nécessitent un jeton Bearer. Les données sont isolées par
@@ -77,7 +76,7 @@ utiliser les routes métier.
 5. Ajouter les variables d'environnement Vercel pour chaque environnement
    utilisé (`Production`, et éventuellement `Preview` et `Development`) :
    `DATABASE_URL`, `DIRECT_URL`, `AUTH_SECRET`, `PLATFORM_ADMIN_EMAIL`,
-   `PLATFORM_ADMIN_PASSWORD`, `TRIAL_DAYS`, `SASPAY_API_KEY` et `APP_ORIGIN`.
+   `PLATFORM_ADMIN_PASSWORD` et `TRIAL_DAYS`.
 6. Générer une valeur longue et aléatoire pour `AUTH_SECRET`. Les secrets
    Supabase et administrateur doivent rester dans les variables Vercel, jamais
    dans une variable `NEXT_PUBLIC_*` ni dans Git.
@@ -102,17 +101,8 @@ publique distincte ni configuration CORS de production n'est nécessaire.
 - `PLATFORM_ADMIN_EMAIL` et `PLATFORM_ADMIN_PASSWORD` : identifiants de
   l'administration de la plateforme.
 - `TRIAL_DAYS` : durée de l'essai en jours (10 par défaut).
-- `SASPAY_API_KEY` : clé SasPay secrète (`sk_test_...` pour les tests ou
-  `sk_live_...` en production), configurée uniquement côté serveur.
-- `APP_ORIGIN` : origine publique de l'application, sans chemin (par exemple
-  `https://saas-gestion-pressing-github.vercel.app`), utilisée comme URL de
-  retour après le checkout SasPay. Utiliser une URL HTTPS en production.
-- L’abonnement SaaS coûte 5 000 XOF pour 30 jours. Le checkout SasPay hébergé
-  traite le paiement ; l’accès n’est prolongé qu’après vérification du statut
-  de la session auprès de l’API SasPay. Après avoir ajouté `SASPAY_API_KEY`,
-  enregistrer le webhook de retour n’est pas nécessaire pour le flux de
-  confirmation : le navigateur est redirigé vers un endpoint serveur qui
-  revalide le statut auprès de SasPay.
+- Le paiement en ligne est temporairement désactivé. Les boutiques doivent
+  contacter l'administrateur de la plateforme pour renouveler leur accès.
 - Chaque boutique peut choisir une couleur d'interface parmi sept thèmes dans
   « Ma boutique » ; son choix est enregistré avec les paramètres de boutique.
 - `WEB_ORIGIN` et `PORT` : utilisés par le serveur API autonome local.
