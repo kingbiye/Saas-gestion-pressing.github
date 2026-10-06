@@ -612,7 +612,21 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
             <span className="topbar-caption">Espace professionnel</span>
             <strong title={shop.name}>{shop.name || "Mon pressing"}</strong>
           </div>
-          <div className="topbar-actions"><span className="today-label">{new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}</span><span className="avatar avatar-small">{(email || "P").charAt(0).toUpperCase()}</span></div>
+          <div className="topbar-actions">
+            <span className="today-label">{new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}</span>
+            <div className="workspace-help-actions" aria-label="Contacter l’administrateur">
+              <a className="button button-secondary" href="tel:+242065334385">Appeler</a>
+              <a
+                className="button button-primary"
+                href="https://wa.me/242065334385?text=Bonjour%2C%20je%20souhaite%20contacter%20l%E2%80%99administrateur%20de%20Pressing%20OS."
+                target="_blank"
+                rel="noreferrer"
+              >
+                WhatsApp
+              </a>
+            </div>
+            <span className="avatar avatar-small">{(email || "P").charAt(0).toUpperCase()}</span>
+          </div>
         </header>
         <div className="workspace">
           <PageHeading {...heading[view]} />
