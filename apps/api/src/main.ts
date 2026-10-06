@@ -179,6 +179,14 @@ function getAppOrigin(): string {
   return parsed.origin;
 }
 
+function unwrapSasPayResponse(payload: unknown): unknown {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload) || !("success" in payload)) {
+    return payload;
+  }
+  if (payload.success !== true) throw new ApiRequestError(502, "PAYMENT_PROVIDER_ERROR");
+  return "data" in payload ? payload.data : undefined;
+}
+
 async function getSasPayCheckoutStatus(providerSessionId: string) {
   if (!saspayApiKey) throw new ApiRequestError(503, "BILLING_NOT_CONFIGURED");
   let response: Response;
@@ -195,12 +203,13 @@ async function getSasPayCheckoutStatus(providerSessionId: string) {
     console.error("SasPay status request returned HTTP", response.status);
     throw new ApiRequestError(502, "PAYMENT_PROVIDER_ERROR");
   }
-  let result: unknown;
+  let payload: unknown;
   try {
-    result = await response.json();
+    payload = await response.json();
   } catch {
     throw new ApiRequestError(502, "PAYMENT_PROVIDER_INVALID_RESPONSE");
   }
+  const result = unwrapSasPayResponse(payload);
   if (!result || typeof result !== "object" || !("id" in result) || result.id !== providerSessionId) {
     throw new ApiRequestError(502, "PAYMENT_PROVIDER_INVALID_RESPONSE");
   }
@@ -466,13 +475,14 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
       await prisma.billingPayment.update({ where: { id: payment.id }, data: { status: "FAILED" } });
       return json(res, 502, { error: "PAYMENT_PROVIDER_ERROR" });
     }
-    let checkout: unknown;
+    let checkoutPayload: unknown;
     try {
-      checkout = await response.json();
+      checkoutPayload = await response.json();
     } catch {
       await prisma.billingPayment.update({ where: { id: payment.id }, data: { status: "FAILED" } });
       return json(res, 502, { error: "PAYMENT_PROVIDER_INVALID_RESPONSE" });
     }
+    const checkout = unwrapSasPayResponse(checkoutPayload);
     if (!checkout || typeof checkout !== "object"
       || !("id" in checkout) || typeof checkout.id !== "string"
       || !("checkout_url" in checkout) || typeof checkout.checkout_url !== "string") {
