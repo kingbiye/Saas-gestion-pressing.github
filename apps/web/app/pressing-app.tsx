@@ -628,11 +628,27 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
                   {billing.plan === "TRIAL"
                     ? `Essai gratuit jusqu’au ${new Date(billing.expiresAt).toLocaleDateString("fr-FR")}.`
                     : `Accès ${billing.active ? "actif" : "expiré"}${billing.active ? ` jusqu’au ${new Date(billing.expiresAt).toLocaleDateString("fr-FR")}` : ""}.`}
-                  {" "}Pour renouveler votre accès, contactez l’administrateur de la plateforme. Le paiement en ligne est temporairement indisponible.
+                  {" "}Pour renouveler votre accès ou obtenir de l’aide, contactez l’administrateur.
                 </p>
               </div>
               <div className="subscription-actions">
-                <p className="subscription-unavailable">Renouvellement manuel auprès de l’administrateur</p>
+                <a className="button button-primary" href="mailto:pressinggestion9@gmail.com?subject=Renouvellement%20Pressing%20OS">
+                  Contacter l’administrateur
+                </a>
+                <a className="button button-secondary" href="tel:+242065334385">
+                  Appeler le +242 06 533 43 85
+                </a>
+                <a
+                  className="button button-secondary"
+                  href="https://wa.me/242065334385?text=Bonjour%2C%20je%20souhaite%20contacter%20l%E2%80%99administrateur%20de%20Pressing%20OS."
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  WhatsApp
+                </a>
+                <a className="subscription-contact-email" href="mailto:pressinggestion9@gmail.com">
+                  pressinggestion9@gmail.com
+                </a>
               </div>
             </section>}
             <div className="stats-grid">
