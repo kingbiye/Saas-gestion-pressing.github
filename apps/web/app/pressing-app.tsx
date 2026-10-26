@@ -133,6 +133,24 @@ function StatCard({ label, value, detail, tone = "default" }: { label: string; v
   return <article className={`stat-card stat-${tone}`}><p>{label}</p><strong>{value}</strong><span>{detail}</span></article>;
 }
 
+function LoadingScreen() {
+  return (
+    <main
+      role="status"
+      aria-live="polite"
+      style={{
+        minHeight: "100vh",
+        display: "grid",
+        placeItems: "center",
+        color: "#6b7280",
+        fontSize: "0.95rem",
+      }}
+    >
+      Chargement de votre espace…
+    </main>
+  );
+}
+
 function DepositRow({ deposit, onAdvance, onPaymentChange }: {
   deposit: Deposit;
   onAdvance: (deposit: Deposit) => void;
@@ -179,6 +197,9 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  // true tant que la session et les données de la boutique ne sont pas chargées :
+  // évite d'afficher l'interface par défaut ("Mon pressing", thème vert, 0 FCFA).
+  const [booting, setBooting] = useState(true);
   const [view, setView] = useState<View>("overview");
   const [services, setServices] = useState<Service[]>([]);
   const [deposits, setDeposits] = useState<Deposit[]>([]);
@@ -241,15 +262,20 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
 
   useEffect(() => {
     if (adminPage) {
-      if (!readToken("pressing_admin_token")) return;
+      if (!readToken("pressing_admin_token")) {
+        setBooting(false);
+        return;
+      }
       setAuthenticated(true);
       setAdminAuthenticated(true);
-      refreshTenants().catch((cause: unknown) => {
-        clearToken("pressing_admin_token");
-        setAuthenticated(false);
-        setAdminAuthenticated(false);
-        setError(cause instanceof Error ? cause.message : "Chargement administrateur impossible.");
-      });
+      refreshTenants()
+        .catch((cause: unknown) => {
+          clearToken("pressing_admin_token");
+          setAuthenticated(false);
+          setAdminAuthenticated(false);
+          setError(cause instanceof Error ? cause.message : "Chargement administrateur impossible.");
+        })
+        .finally(() => setBooting(false));
       return;
     }
 
@@ -258,13 +284,18 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
       setResetToken(token);
       setForgotMode(true);
     }
-    if (!readToken("pressing_token")) return;
+    if (!readToken("pressing_token")) {
+      setBooting(false);
+      return;
+    }
     setAuthenticated(true);
-    refreshBusiness().catch((cause: unknown) => {
-      clearToken("pressing_token");
-      setAuthenticated(false);
-      setError(cause instanceof Error ? cause.message : "Chargement de l'espace impossible.");
-    });
+    refreshBusiness()
+      .catch((cause: unknown) => {
+        clearToken("pressing_token");
+        setAuthenticated(false);
+        setError(cause instanceof Error ? cause.message : "Chargement de l'espace impossible.");
+      })
+      .finally(() => setBooting(false));
   }, [adminPage, refreshBusiness, refreshTenants]);
 
   const openDeposits = deposits.filter((deposit) => deposit.status !== "PICKED_UP").length;
@@ -496,6 +527,12 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
     });
   }
 
+  // Écran de chargement : on n'affiche ni la page de connexion ni l'interface
+  // tant que la session et les données de la boutique ne sont pas prêtes.
+  if (booting) {
+    return <LoadingScreen />;
+  }
+
   if (!authenticated) {
     return (
       <main className="auth-shell">
@@ -582,17 +619,31 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
     shop: { eyebrow: "IDENTITÉ DE VOTRE BOUTIQUE", title: "Ma boutique", description: "Personnalisez votre espace avec le logo de votre pressing." },
   };
 
+  // Initiale affichée dans les pastilles : nom de la boutique d'abord, puis e-mail.
+  const shopInitial = (shop.name || email || "P").charAt(0).toUpperCase();
+
   return (
     <main className="app-shell" data-color-theme={shop.colorTheme}>
       <aside className="sidebar">
-        <a className="brand brand-light" href="/"><span className={`brand-mark ${shop.logoDataUrl ? "brand-mark-logo" : ""}`}>{shop.logoDataUrl ? <img src={shop.logoDataUrl} alt={`Logo ${shop.name}`} /> : "P"}</span> pressing<span>OS</span></a>
+        <a
+          className="brand brand-light"
+          href="/"
+          aria-label="pressingOS, retour à la vue d'ensemble"
+          onClick={(event) => {
+            // Pas de rechargement de la page : on revient simplement à la vue d'ensemble.
+            event.preventDefault();
+            setView("overview");
+            setError("");
+            setMessage("");
+          }}
+        ><span className={`brand-mark ${shop.logoDataUrl ? "brand-mark-logo" : ""}`}>{shop.logoDataUrl ? <img src={shop.logoDataUrl} alt={`Logo ${shop.name}`} /> : shopInitial}</span> pressing<span>OS</span></a>
         <div className="workspace-label">ESPACE DE TRAVAIL</div>
         <nav className="side-nav" aria-label="Navigation principale">
           {NAV_ITEMS.map((item) => <button key={item.id} className={`nav-item ${view === item.id ? "nav-item-active" : ""}`} onClick={() => { setView(item.id); setError(""); }}><span className="nav-icon">{item.icon}</span>{item.label}{item.id === "deposits" && openDeposits > 0 && <span className="nav-count">{openDeposits}</span>}</button>)}
         </nav>
         <div className="sidebar-bottom">
           {billing && <div className="trial-card"><span className="trial-icon">✦</span><strong>{billing.plan === "TRIAL" ? "Période d'essai" : `Offre ${billing.plan}`}</strong><p>{billing.plan === "TRIAL" ? `Jusqu'au ${new Date(billing.expiresAt).toLocaleDateString("fr-FR")}` : "Votre espace est actif"}</p></div>}
-          <div className="profile-row"><span className={`avatar ${shop.logoDataUrl ? "avatar-logo" : ""}`}>{shop.logoDataUrl ? <img src={shop.logoDataUrl} alt="" /> : (email || "P").charAt(0).toUpperCase()}</span><div><strong>{shop.name || "Mon pressing"}</strong><small>{email}</small></div><button className="icon-button light-icon" onClick={signOut} aria-label="Se déconnecter" title="Se déconnecter">↗</button></div>
+          <div className="profile-row"><span className={`avatar ${shop.logoDataUrl ? "avatar-logo" : ""}`}>{shop.logoDataUrl ? <img src={shop.logoDataUrl} alt="" /> : shopInitial}</span><div><strong>{shop.name || "Mon pressing"}</strong><small>{email}</small></div><button className="icon-button light-icon" onClick={signOut} aria-label="Se déconnecter" title="Se déconnecter">↗</button></div>
         </div>
       </aside>
       <section className="main-area">
@@ -625,7 +676,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
                 WhatsApp
               </a>
             </div>
-            <span className="avatar avatar-small">{(email || "P").charAt(0).toUpperCase()}</span>
+            <span className="avatar avatar-small">{shopInitial}</span>
           </div>
         </header>
         <div className="workspace">
@@ -778,7 +829,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
             <p className="muted">Ajoutez le logo de {shop.name || "votre boutique"}. Il apparaîtra dans le menu de votre espace professionnel.</p>
             <div className="shop-logo-editor">
               <div className="shop-logo-preview">
-                {shop.logoDataUrl ? <img src={shop.logoDataUrl} alt={`Logo ${shop.name}`} /> : <span>{(shop.name || "P").charAt(0).toUpperCase()}</span>}
+                {shop.logoDataUrl ? <img src={shop.logoDataUrl} alt={`Logo ${shop.name}`} /> : <span>{shopInitial}</span>}
               </div>
               <div className="shop-logo-actions">
                 <label className="button button-primary shop-logo-upload">
