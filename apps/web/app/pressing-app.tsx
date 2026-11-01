@@ -261,6 +261,8 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   const [offlineMode, setOfflineMode] = useState(false);
   const [pendingDepositCount, setPendingDepositCount] = useState(0);
   const [hasBusinessData, setHasBusinessData] = useState(false);
+  const [downloadingReceipt, setDownloadingReceipt] = useState(false);
+  const [receiptDownloadError, setReceiptDownloadError] = useState("");
   const [view, setView] = useState<View>("overview");
   const [services, setServices] = useState<Service[]>([]);
   const [deposits, setDeposits] = useState<Deposit[]>([]);
@@ -737,6 +739,74 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
     }, true);
   }
 
+  async function downloadReceiptPdf() {
+    if (!receiptDeposit) return;
+    setDownloadingReceipt(true);
+    setReceiptDownloadError("");
+    try {
+      const { jsPDF } = await import("jspdf");
+      const pdf = new jsPDF({ unit: "mm", format: "a5" });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const margin = 16;
+      const contentWidth = pageWidth - margin * 2;
+      let y = 24;
+
+      pdf.setFillColor(23, 107, 75);
+      pdf.rect(0, 0, pageWidth, 48, "F");
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(10);
+      pdf.text("REÇU DE DÉPÔT", margin, y);
+      y += 10;
+      pdf.setFontSize(19);
+      const shopName = pdf.splitTextToSize(shop.name || "Mon pressing", contentWidth);
+      pdf.text(shopName, margin, y);
+      y += shopName.length * 8 + 5;
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(10);
+      pdf.text(`Référence : ${receiptDeposit.reference}`, margin, y);
+
+      y = 62;
+      const addDetail = (label: string, value: string) => {
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(9);
+        pdf.setTextColor(100, 116, 109);
+        pdf.text(label, margin, y);
+        pdf.setFont("helvetica", "bold");
+        pdf.setTextColor(32, 45, 39);
+        const lines = pdf.splitTextToSize(value, contentWidth * 0.58);
+        pdf.text(lines, pageWidth - margin, y, { align: "right" });
+        y += Math.max(10, lines.length * 5 + 4);
+        pdf.setDrawColor(222, 230, 225);
+        pdf.line(margin, y - 2, pageWidth - margin, y - 2);
+      };
+
+      addDetail("Nom du client", receiptDeposit.customerName);
+      addDetail(
+        "Article déposé",
+        services.find((service) => service.id === receiptDeposit.serviceId)?.name ?? "Article non précisé",
+      );
+      addDetail("Date du dépôt", dateTimeLabel(receiptDeposit.createdAt));
+      addDetail("Date de récupération", dateTimeLabel(receiptDeposit.pickupAt));
+      addDetail("Paiement", receiptDeposit.paid ? "Payé" : "Non payé");
+      addDetail("Montant", `${money(receiptDeposit.priceCents)} FCFA`);
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(10);
+      pdf.setTextColor(100, 116, 109);
+      pdf.text("Merci de votre confiance.", pageWidth / 2, y + 8, { align: "center" });
+
+      const safeReference = receiptDeposit.reference.replace(/[^a-zA-Z0-9_-]/g, "-");
+      pdf.save(`recu-${safeReference}.pdf`);
+    } catch (cause) {
+      setReceiptDownloadError(cause instanceof Error
+        ? `Le reçu PDF n’a pas pu être téléchargé : ${cause.message}`
+        : "Le reçu PDF n’a pas pu être téléchargé.");
+    } finally {
+      setDownloadingReceipt(false);
+    }
+  }
+
   async function createExpense(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await runAction(async () => {
@@ -1157,9 +1227,12 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
       {receiptDeposit && <div className="receipt-backdrop">
         <section className="receipt-modal" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
           <div className="receipt-actions">
-            <button className="button button-secondary" onClick={() => setReceiptDeposit(null)}>Fermer</button>
-            <button className="button button-primary" onClick={() => window.print()}>Imprimer / télécharger en PDF</button>
+            <button className="button button-secondary" onClick={() => { setReceiptDeposit(null); setReceiptDownloadError(""); }}>Fermer</button>
+            <button className="button button-primary" disabled={downloadingReceipt} onClick={() => void downloadReceiptPdf()}>
+              {downloadingReceipt ? "Préparation du PDF…" : "Télécharger le reçu PDF"}
+            </button>
           </div>
+          {receiptDownloadError && <p className="notice notice-error" role="alert">{receiptDownloadError}</p>}
           <article className="receipt">
             <p className="eyebrow">REÇU DE DÉPÔT</p>
             <h1 id="receipt-title">{shop.name || "Mon pressing"}</h1>
