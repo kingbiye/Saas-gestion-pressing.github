@@ -99,10 +99,7 @@ strong, h1, h2, h3 { font-family: Manrope, "DM Sans", Arial, sans-serif; }
 .nav-icon { display: grid; place-items: center; width: 20px; color: var(--lime); font-size: 17px; }
 .nav-count { display: inline-grid; place-items: center; min-width: 22px; height: 22px; margin-left: auto; padding: 0 5px; border-radius: 12px; color: #173c30; background: var(--lime); font-size: 10px; font-weight: 800; }
 .sidebar-bottom { display: grid; gap: 17px; margin-top: auto; }
-.trial-card { padding: 14px; border: 1px solid rgba(213,239,158,.15); border-radius: 12px; background: rgba(255,255,255,.055); }
-.trial-icon { color: var(--lime); font-size: 17px; }
-.trial-card strong { display: block; margin-top: 6px; font-size: 12px; }
-.trial-card p { margin: 5px 0 0; color: #aec4b7; font-size: 11px; }
+
 .profile-row { display: flex; align-items: center; gap: 10px; padding: 13px 4px 0; border-top: 1px solid rgba(255,255,255,.12); }
 .profile-row > div { display: grid; min-width: 0; gap: 3px; flex: 1; }
 .profile-row strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; }
@@ -121,7 +118,10 @@ strong, h1, h2, h3 { font-family: Manrope, "DM Sans", Arial, sans-serif; }
 .topbar-caption { color: var(--muted-dark); font-size: 12px; font-weight: 600; }
 .topbar-shop-name strong { overflow: hidden; color: var(--ink); font-size: clamp(20px, 2vw, 28px); line-height: 1.15; letter-spacing: -.7px; text-overflow: ellipsis; white-space: nowrap; }
 .topbar-actions { position: relative; z-index: 1; display: flex; align-items: center; gap: 15px; }
-.workspace-help-actions { display: flex; align-items: center; gap: 7px; }
+.billing-header-badge { display: grid; gap: 2px; padding: 8px 11px; border: 1px solid rgba(53,104,75,.18); border-radius: 9px; color: var(--green); background: rgba(255,255,255,.86); font-size: 11px; line-height: 1.25; }
+.billing-header-badge strong { font-size: 11px; }
+.billing-header-badge-expired { border-color: rgba(166,63,48,.25); color: #a63f30; }
+.billing-header-badge-expired span { font-weight: 700; }
 .today-label { color: var(--muted); font-size: 12px; text-transform: capitalize; }
 .workspace { width: min(100%, 1500px); margin: auto; padding: 36px clamp(22px, 4vw, 58px) 60px; }
 .page-heading { margin-bottom: 25px; }
@@ -139,13 +139,10 @@ strong, h1, h2, h3 { font-family: Manrope, "DM Sans", Arial, sans-serif; }
 .stat-blue { background: #f9fbfe; }
 .stat-blue > strong { color: #456985; }
 .overview-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(260px, .8fr); gap: 17px; }
-.subscription-card { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 17px; }
-.subscription-card h2 { margin: 0; font-size: 17px; }
-.subscription-card .muted { margin: 7px 0 0; font-size: 12px; }
 .subscription-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 9px; }
-.subscription-unavailable { margin: 0; color: var(--muted); font-size: 11px; }
-.subscription-contact-email { color: var(--green); font-size: 11px; font-weight: 700; text-decoration: none; }
-.subscription-contact-email:hover { text-decoration: underline; }
+.settings-contact-actions { justify-content: flex-start; }
+.settings-contact-email { display: inline-block; margin-top: 12px; color: var(--green); font-size: 12px; font-weight: 700; text-decoration: none; }
+.settings-contact-email:hover { text-decoration: underline; }
 .content-card { min-width: 0; padding: 21px; border: 1px solid var(--line); border-radius: 13px; background: var(--paper); box-shadow: 0 3px 14px rgba(35,57,44,.025); }
 .section-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 17px; }
 .section-title h2 { margin: 0; font-size: 17px; letter-spacing: -.4px; }
@@ -268,8 +265,8 @@ td small { display: block; margin-top: 3px; color: #87938b; font-size: 10px; }
   .nav-count { position: absolute; transform: translate(20px, -8px); min-width: 17px; height: 17px; font-size: 9px; }
   .topbar { min-height: 112px; padding: 12px 17px; }
   .topbar-actions { gap: 8px; }
-  .workspace-help-actions { gap: 5px; }
-  .workspace-help-actions .button { min-height: 34px; padding: 0 9px; font-size: 10px; }
+  .billing-header-badge { max-width: 138px; padding: 6px 8px; font-size: 10px; }
+  .billing-header-badge strong { font-size: 10px; }
   .topbar-caption { font-size: 10px; }
   .topbar-shop-name strong { font-size: 19px; }
   .today-label { font-size: 10px; }
@@ -282,7 +279,6 @@ td small { display: block; margin-top: 3px; color: #87938b; font-size: 10px; }
   .stat-card > strong { margin: 10px 0 5px; font-size: 19px; }
   .stat-card > span { font-size: 9px; }
   .overview-grid, .page-grid { grid-template-columns: 1fr; gap: 12px; }
-  .subscription-card { align-items: flex-start; flex-direction: column; gap: 13px; }
   .subscription-actions { justify-content: flex-start; }
   .content-card { padding: 16px; }
   .shop-logo-editor { align-items: flex-start; gap: 14px; padding: 14px; }

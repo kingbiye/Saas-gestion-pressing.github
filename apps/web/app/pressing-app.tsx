@@ -101,7 +101,7 @@ const NAV_ITEMS: { id: View; label: string; icon: string }[] = [
   { id: "catalog", label: "Catalogue", icon: "◇" },
   { id: "expenses", label: "Dépenses", icon: "↗" },
   { id: "reports", label: "Rapports", icon: "▥" },
-  { id: "shop", label: "Ma boutique", icon: "⚙" },
+  { id: "shop", label: "Paramètres", icon: "⚙" },
 ];
 
 function money(cents: number) {
@@ -1114,7 +1114,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
     catalog: { eyebrow: "VOS PRESTATIONS", title: "Catalogue", description: "Gérez les services et tarifs proposés à vos clients." },
     expenses: { eyebrow: "SUIVI FINANCIER", title: "Dépenses", description: "Enregistrez vos frais pour suivre la rentabilité de l'activité." },
     reports: { eyebrow: "ANALYSE", title: "Rapports mensuels", description: "Comparez les recettes et dépenses de votre pressing." },
-    shop: { eyebrow: "IDENTITÉ DE VOTRE BOUTIQUE", title: "Ma boutique", description: "Personnalisez votre espace avec le logo de votre pressing." },
+    shop: { eyebrow: "CONFIGURATION DE VOTRE ESPACE", title: "Paramètres", description: "Gérez l’apparence de votre boutique et contactez l’administrateur." },
   };
 
   // Initiale affichée dans les pastilles : nom de la boutique d'abord, puis e-mail.
@@ -1140,7 +1140,6 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
           {NAV_ITEMS.map((item) => <button key={item.id} className={`nav-item ${view === item.id ? "nav-item-active" : ""}`} onClick={() => { setView(item.id); setError(""); }}><span className="nav-icon">{item.icon}</span>{item.label}{item.id === "deposits" && openDeposits > 0 && <span className="nav-count">{openDeposits}</span>}</button>)}
         </nav>
         <div className="sidebar-bottom">
-          {billing && <div className="trial-card"><span className="trial-icon">✦</span><strong>{billing.plan === "TRIAL" ? "Période d'essai" : `Offre ${billing.plan}`}</strong><p>{billing.plan === "TRIAL" ? `Jusqu'au ${new Date(billing.expiresAt).toLocaleDateString("fr-FR")}` : "Votre espace est actif"}</p></div>}
           <div className="profile-row"><span className={`avatar ${shop.logoDataUrl ? "avatar-logo" : ""}`}>{shop.logoDataUrl ? <img src={shop.logoDataUrl} alt="" /> : shopInitial}</span><div><strong>{shop.name || "Mon pressing"}</strong><small>{email}</small></div><button className="icon-button light-icon" onClick={signOut} aria-label="Se déconnecter" title="Se déconnecter">↗</button></div>
         </div>
       </aside>
@@ -1162,18 +1161,13 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
             <strong title={shop.name}>{shop.name || "Mon pressing"}</strong>
           </div>
           <div className="topbar-actions">
+            {billing && <div className={`billing-header-badge ${billing.active ? "" : "billing-header-badge-expired"}`} role="status">
+              <strong>{billing.plan === "TRIAL" ? "Période d’essai" : `Offre ${billing.plan}`}</strong>
+              <span>{billing.active
+                ? `${billing.plan === "TRIAL" ? "Jusqu’au" : "Actif jusqu’au"} ${new Date(billing.expiresAt).toLocaleDateString("fr-FR")}`
+                : billing.plan === "TRIAL" ? "Période d’essai expirée" : "Abonnement expiré"}</span>
+            </div>}
             <span className="today-label">{new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}</span>
-            <div className="workspace-help-actions" aria-label="Contacter l’administrateur">
-              <a className="button button-secondary" href="tel:+242065334385">Appeler</a>
-              <a
-                className="button button-primary"
-                href="https://wa.me/242065334385?text=Bonjour%2C%20je%20souhaite%20contacter%20l%E2%80%99administrateur%20de%20Pressing%20OS."
-                target="_blank"
-                rel="noreferrer"
-              >
-                WhatsApp
-              </a>
-            </div>
             <span className="avatar avatar-small">{shopInitial}</span>
           </div>
         </header>
@@ -1189,37 +1183,6 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
           {message && <div className="notice notice-success" role="status">{message}</div>}
 
           {view === "overview" && <>
-            {billing && <section className="content-card subscription-card">
-              <div>
-                <p className="eyebrow">ABONNEMENT</p>
-                <h2>{billing.plan === "TRIAL" ? "Votre période d’essai" : "Votre abonnement Pressing OS"}</h2>
-                <p className="muted">
-                  {billing.plan === "TRIAL"
-                    ? `Essai gratuit jusqu’au ${new Date(billing.expiresAt).toLocaleDateString("fr-FR")}.`
-                    : `Accès ${billing.active ? "actif" : "expiré"}${billing.active ? ` jusqu’au ${new Date(billing.expiresAt).toLocaleDateString("fr-FR")}` : ""}.`}
-                  {" "}Pour renouveler votre accès ou obtenir de l’aide, contactez l’administrateur.
-                </p>
-              </div>
-              <div className="subscription-actions">
-                <a className="button button-primary" href="mailto:pressinggestion9@gmail.com?subject=Renouvellement%20Pressing%20OS">
-                  Contacter l’administrateur
-                </a>
-                <a className="button button-secondary" href="tel:+242065334385">
-                  Appeler le +242 06 533 43 85
-                </a>
-                <a
-                  className="button button-secondary"
-                  href="https://wa.me/242065334385?text=Bonjour%2C%20je%20souhaite%20contacter%20l%E2%80%99administrateur%20de%20Pressing%20OS."
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  WhatsApp
-                </a>
-                <a className="subscription-contact-email" href="mailto:pressinggestion9@gmail.com">
-                  pressinggestion9@gmail.com
-                </a>
-              </div>
-            </section>}
             <div className="stats-grid">
               <StatCard label="Chiffre d'affaires" value={`${money(report?.revenueCents ?? 0)} FCFA`} detail={monthLabel(month)} />
               <StatCard label="Dépenses" value={`${money(report?.expensesCents ?? 0)} FCFA`} detail={monthLabel(month)} tone="warm" />
@@ -1366,6 +1329,33 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
             <h3 className="report-month">{monthLabel(month)}</h3>
             <div className="stats-grid report-stats"><StatCard label="Chiffre d'affaires" value={`${money(report?.revenueCents ?? 0)} FCFA`} detail="Dépôts enregistrés" /><StatCard label="Dépenses" value={`${money(report?.expensesCents ?? 0)} FCFA`} detail="Dépenses déclarées" tone="warm" /><StatCard label="Résultat net" value={`${money(report?.profitCents ?? 0)} FCFA`} detail="Chiffre d'affaires − dépenses" tone="green" /></div>
             <div className="report-services"><div className="section-title"><div><p className="eyebrow">ACTIVITÉ</p><h2>Prestations les plus demandées</h2></div></div>{report?.topServices.length ? report.topServices.map((service, index) => <div className="popular-row" key={service.name}><span className="popular-rank">{String(index + 1).padStart(2, "0")}</span><strong>{service.name}</strong><span>{service.count} pièce(s)</span></div>) : <p className="empty-state">Aucune prestation enregistrée pour ce mois.</p>}</div>
+          </section>}
+
+          {view === "shop" && <section className="content-card shop-settings-card">
+            <div className="section-title"><div><p className="eyebrow">ASSISTANCE ET ABONNEMENT</p><h2>Contacter l’administrateur</h2></div></div>
+            {billing && <p className="muted">
+              {billing.plan === "TRIAL"
+                ? `Période d’essai jusqu’au ${new Date(billing.expiresAt).toLocaleDateString("fr-FR")}.`
+                : `Accès ${billing.active ? "actif" : "expiré"}${billing.active ? ` jusqu’au ${new Date(billing.expiresAt).toLocaleDateString("fr-FR")}` : ""}.`}
+              {" "}Contactez l’administrateur pour renouveler l’accès ou obtenir de l’aide.
+            </p>}
+            <div className="subscription-actions settings-contact-actions">
+              <a className="button button-primary" href="mailto:pressinggestion9@gmail.com?subject=Renouvellement%20Pressing%20OS">
+                Envoyer un e-mail
+              </a>
+              <a className="button button-secondary" href="tel:+242065334385">
+                Appeler le +242 06 533 43 85
+              </a>
+              <a
+                className="button button-secondary"
+                href="https://wa.me/242065334385?text=Bonjour%2C%20je%20souhaite%20contacter%20l%E2%80%99administrateur%20de%20Pressing%20OS."
+                target="_blank"
+                rel="noreferrer"
+              >
+                WhatsApp
+              </a>
+            </div>
+            <a className="settings-contact-email" href="mailto:pressinggestion9@gmail.com">pressinggestion9@gmail.com</a>
           </section>}
 
           {view === "shop" && <section className="content-card shop-settings-card">
