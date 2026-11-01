@@ -414,7 +414,11 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
     return json(res, 200, { deleted: true });
   }
   if (url.pathname === "/deposits" && req.method === "GET") {
-    return json(res, 200, await prisma.deposit.findMany({ where: { tenantId: current.tenant.id }, orderBy: { createdAt: "desc" } }));
+    return json(res, 200, await prisma.deposit.findMany({
+      where: { tenantId: current.tenant.id },
+      include: { service: true, items: true },
+      orderBy: { createdAt: "desc" },
+    }));
   }
   if (url.pathname === "/deposits" && req.method === "POST") {
     const input = await body(req);
@@ -424,6 +428,7 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
     if (reference?.startsWith("PWA-")) {
       const existing = await prisma.deposit.findFirst({
         where: { tenantId: current.tenant.id, reference },
+        include: { service: true, items: true },
       });
       if (existing) return json(res, 200, existing);
     }
@@ -432,9 +437,53 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
       ? await prisma.service.findFirst({ where: { id: serviceId, tenantId: current.tenant.id } })
       : null;
     if (serviceId && !service) return json(res, 400, { error: "INVALID_SERVICE" });
-    const priceCents = input.priceCents === undefined ? service?.priceCents ?? 0 : Number(input.priceCents);
+    let items: { serviceId: string; serviceName: string; quantity: number; unitPriceCents: number }[] = [];
+    let priceCents: number;
+    if (input.items !== undefined) {
+      if (!Array.isArray(input.items) || input.items.length === 0 || input.serviceId !== undefined) {
+        return json(res, 400, { error: "INVALID_DEPOSIT_DETAILS" });
+      }
+      const requestedItems: { serviceId: string; quantity: number }[] = [];
+      for (const item of input.items) {
+        if (
+          typeof item !== "object"
+          || item === null
+          || typeof item.serviceId !== "string"
+          || !Number.isInteger(item.quantity)
+          || item.quantity < 1
+          || item.quantity > 2_147_483_647
+        ) {
+          return json(res, 400, { error: "INVALID_DEPOSIT_DETAILS" });
+        }
+        requestedItems.push({ serviceId: item.serviceId, quantity: item.quantity });
+      }
+      const selectedServices = await prisma.service.findMany({
+        where: { tenantId: current.tenant.id, id: { in: [...new Set(requestedItems.map((item) => item.serviceId))] } },
+      });
+      const servicesById = new Map(selectedServices.map((item) => [item.id, item]));
+      for (const item of requestedItems) {
+        const selectedService = servicesById.get(item.serviceId);
+        if (!selectedService) return json(res, 400, { error: "INVALID_SERVICE" });
+        items.push({
+          serviceId: selectedService.id,
+          serviceName: selectedService.name,
+          quantity: item.quantity,
+          unitPriceCents: selectedService.priceCents,
+        });
+      }
+      priceCents = items.reduce((total, item) => total + item.quantity * item.unitPriceCents, 0);
+    } else {
+      priceCents = input.priceCents === undefined ? service?.priceCents ?? 0 : Number(input.priceCents);
+    }
     const pickupAt = input.pickupAt ? new Date(String(input.pickupAt)) : null;
-    if (!Number.isInteger(priceCents) || priceCents < 0 || (pickupAt && Number.isNaN(pickupAt.getTime()))) {
+    if (
+      !Number.isSafeInteger(priceCents)
+      || priceCents < 0
+      || priceCents > 2_147_483_647
+      || items.some((item) =>
+        !Number.isSafeInteger(item.quantity * item.unitPriceCents) || item.quantity * item.unitPriceCents > 2_147_483_647)
+      || (pickupAt && Number.isNaN(pickupAt.getTime()))
+    ) {
       return json(res, 400, { error: "INVALID_DEPOSIT_DETAILS" });
     }
     const deposit = await prisma.deposit.create({
@@ -448,7 +497,13 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
         locker: input.locker ? String(input.locker).trim() : undefined,
         tenantId: current.tenant.id,
         serviceId: serviceId ?? undefined,
+        ...(items.length > 0 && {
+          items: {
+            create: items,
+          },
+        }),
       },
+      include: { service: true, items: true },
     });
     return json(res, 201, deposit);
   }
@@ -502,7 +557,7 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
     const [depositsInMonth, expensesInMonth] = await Promise.all([
       prisma.deposit.findMany({
         where: { tenantId: current.tenant.id, createdAt: { gte: start, lt: end } },
-        include: { service: true },
+        include: { service: true, items: true },
       }),
       prisma.expense.findMany({ where: { tenantId: current.tenant.id, incurredAt: { gte: start, lt: end } } }),
     ]);
@@ -510,9 +565,13 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
     const expensesCents = expensesInMonth.reduce((total, expense) => total + expense.amountCents, 0);
     const popular = new Map<string, { name: string; count: number }>();
     for (const deposit of depositsInMonth) {
-      const name = deposit.service?.name ?? "Autres";
-      const currentCount = popular.get(name)?.count ?? 0;
-      popular.set(name, { name, count: currentCount + 1 });
+      const depositServices = deposit.items.length > 0
+        ? deposit.items.map((item) => ({ name: item.serviceName, count: item.quantity }))
+        : [{ name: deposit.service?.name ?? "Autres", count: 1 }];
+      for (const item of depositServices) {
+        const currentCount = popular.get(item.name)?.count ?? 0;
+        popular.set(item.name, { name: item.name, count: currentCount + item.count });
+      }
     }
     return json(res, 200, {
       month,

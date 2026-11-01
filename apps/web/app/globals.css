@@ -290,6 +290,8 @@ td small { display: block; margin-top: 3px; color: #87938b; font-size: 10px; }
   .inline-form { grid-template-columns: 1fr 1fr; padding: 12px; gap: 9px; }
   .inline-form label:first-child { grid-column: 1 / -1; }
   .payment-choice-row { grid-template-columns: 1fr; }
+  .deposit-item-editor { grid-template-columns: minmax(0, 1fr) 90px; }
+  .deposit-item-editor > .button { grid-column: 1 / -1; justify-self: end; }
   .today-label { display: none; }
   .admin-topbar { min-height: 60px; gap: 9px; padding: 0 13px; }
   .admin-topbar .brand { font-size: 14px; }
@@ -310,6 +312,7 @@ td small { display: block; margin-top: 3px; color: #87938b; font-size: 10px; }
   .section-title h2 { font-size: 15px; }
   .inline-form { grid-template-columns: 1fr; }
   .inline-form label:first-child { grid-column: auto; }
+  .deposit-total-preview strong { font-size: 14px; }
 }
 .receipt-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; overflow-y: auto; padding: 24px; background: rgba(18, 35, 27, .62); }
 .receipt-modal { width: min(100%, 560px); padding: 18px; border-radius: 14px; background: white; box-shadow: 0 24px 70px rgba(0, 0, 0, .24); }
@@ -321,9 +324,23 @@ td small { display: block; margin-top: 3px; color: #87938b; font-size: 10px; }
 .receipt-details > div { display: flex; justify-content: space-between; gap: 18px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .receipt-details dt { color: var(--muted); font-size: 12px; }
 .receipt-details dd { margin: 0; font-size: 12px; font-weight: 700; text-align: right; }
+.receipt-items { margin-top: 18px; }
+.receipt-items > p { margin: 0 0 6px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .06em; }
+.receipt-item { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.receipt-item > div { display: grid; min-width: 0; gap: 4px; }
+.receipt-item strong { font-size: 12px; }
+.receipt-item > strong { flex: 0 0 auto; text-align: right; }
+.receipt-item small { color: var(--muted); font-size: 11px; }
 .receipt-total { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 14px; border-radius: 8px; color: #176b4b; background: #edf6f0; }
 .receipt-total span { font-size: 11px; font-weight: 700; letter-spacing: .06em; }
 .receipt-total strong { color: var(--ink); font-size: 20px; font-weight: 800; text-align: right; }
+.deposit-items-fieldset { display: grid; min-width: 0; gap: 12px; margin: 0; padding: 0; border: 0; }
+.deposit-items-fieldset legend { margin-bottom: 8px; color: #34433b; font-size: 12px; font-weight: 700; }
+.deposit-items-editor { display: grid; gap: 12px; }
+.deposit-item-editor { display: grid; grid-template-columns: minmax(0, 1fr) 100px auto; align-items: end; gap: 9px; padding: 12px; border: 1px solid #edf0ed; border-radius: 10px; background: #fafcf9; }
+.deposit-item-editor small { color: var(--muted); font-size: 10px; font-weight: 500; }
+.deposit-total-preview { display: flex; justify-content: space-between; gap: 12px; padding: 13px 14px; border-radius: 9px; color: var(--green); background: var(--green-soft); font-size: 13px; }
+.deposit-total-preview strong { color: var(--ink); font-size: 16px; }
 .receipt-thanks { margin: 22px 0 0; color: var(--muted); font-size: 12px; text-align: center; }
 @media (prefers-reduced-motion: reduce) {
   .topbar-scene { animation: none; opacity: 0; }

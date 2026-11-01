@@ -70,6 +70,7 @@ model Service {
   tenantId   String
   tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   deposits   Deposit[]
+  depositItems DepositItem[]
 }
 
 model Deposit {
@@ -86,9 +87,21 @@ model Deposit {
   serviceId    String?
   tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   service      Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  items        DepositItem[]
   createdAt    DateTime @default(now())
 
   @@index([tenantId, status])
+}
+
+model DepositItem {
+  id             String   @id @default(cuid())
+  depositId      String
+  serviceId      String?
+  serviceName    String
+  quantity       Int
+  unitPriceCents Int
+  deposit        Deposit  @relation(fields: [depositId], references: [id], onDelete: Cascade)
+  service        Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
 }
 
 model Expense {

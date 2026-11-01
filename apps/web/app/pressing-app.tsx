@@ -11,12 +11,21 @@ import {
 } from "./offline-store";
 
 type Service = { id: string; name: string; priceCents: number };
+type DepositItem = {
+  id?: string;
+  serviceId?: string | null;
+  serviceName: string;
+  quantity: number;
+  unitPriceCents: number;
+};
 type Deposit = {
   id: string;
   reference: string;
   customerName: string;
   customerPhone?: string | null;
   serviceId?: string | null;
+  service?: { name: string } | null;
+  items?: DepositItem[];
   status: string;
   priceCents: number;
   paid: boolean;
@@ -25,6 +34,7 @@ type Deposit = {
   createdAt: string;
   syncState?: "pending";
 };
+type DepositLineDraft = { id: string; serviceId: string; quantity: string };
 type Expense = { id: string; label: string; amountCents: number; incurredAt: string };
 type Report = {
   month: string;
@@ -105,6 +115,25 @@ function monthLabel(month: string) {
 function dateTimeLabel(date: string | null | undefined) {
   if (!date) return "Non précisée";
   return new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short" }).format(new Date(date));
+}
+
+function depositItemSummary(deposit: Deposit) {
+  if (deposit.items?.length) {
+    return deposit.items.map((item) => `${item.serviceName} × ${item.quantity}`).join(" · ");
+  }
+  return deposit.service?.name ?? "";
+}
+
+function getDepositItems(deposit: Deposit, services: Service[]): DepositItem[] {
+  if (deposit.items?.length) return deposit.items;
+  return [{
+    serviceId: deposit.serviceId,
+    serviceName: deposit.service?.name
+      ?? services.find((service) => service.id === deposit.serviceId)?.name
+      ?? "Article non précisé",
+    quantity: 1,
+    unitPriceCents: deposit.priceCents,
+  }];
 }
 
 function readToken(key: string) {
@@ -208,7 +237,11 @@ function DepositRow({ deposit, onAdvance, onPaymentChange, onCancelPending, onPr
   const next = STATUS_ORDER[STATUS_ORDER.indexOf(deposit.status) + 1];
   return (
     <tr>
-      <td><strong>{deposit.customerName}</strong><small>#{deposit.reference}</small></td>
+      <td>
+        <strong>{deposit.customerName}</strong>
+        <small>#{deposit.reference}</small>
+        {depositItemSummary(deposit) && <small>{depositItemSummary(deposit)}</small>}
+      </td>
       <td>{deposit.customerPhone || "—"}</td>
       <td>{deposit.syncState === "pending"
         ? <span className="status status-received">En attente de synchronisation</span>
@@ -281,7 +314,9 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   const [editingService, setEditingService] = useState<Service | null>(null);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
-  const [depositServiceId, setDepositServiceId] = useState("");
+  const [depositLines, setDepositLines] = useState<DepositLineDraft[]>([
+    { id: "deposit-line-1", serviceId: "", quantity: "1" },
+  ]);
   const [pickupAt, setPickupAt] = useState("");
   const [locker, setLocker] = useState("");
   const [paid, setPaid] = useState(false);
@@ -511,6 +546,13 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
 
   const openDeposits = deposits.filter((deposit) => deposit.status !== "PICKED_UP").length;
   const readyDeposits = deposits.filter((deposit) => deposit.status === "READY").length;
+  const draftTotalCents = depositLines.reduce((total, line) => {
+    const service = services.find((item) => item.id === line.serviceId);
+    const quantity = Number(line.quantity);
+    return service && Number.isInteger(quantity) && quantity > 0
+      ? total + service.priceCents * quantity
+      : total;
+  }, 0);
 
   function storeToken(key: string, token: string) {
     clearToken(key === "pressing_token" ? "pressing_admin_token" : "pressing_token");
@@ -679,15 +721,37 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
       if (!navigator.onLine && (!billing?.active || new Date(billing.expiresAt).getTime() <= Date.now())) {
         throw new Error("L’accès de la boutique a expiré. Connecte-toi à Internet pour renouveler l’accès avant d’enregistrer.");
       }
-      const service = services.find((item) => item.id === depositServiceId);
-      if (depositServiceId && !service) {
-        throw new Error("Cette prestation n’est pas disponible dans le catalogue chargé. Connecte-toi pour actualiser les données.");
+      if (!depositLines.length) {
+        throw new Error("Ajoute au moins un article au dépôt.");
+      }
+      const selectedItems = depositLines.map((line) => {
+        const service = services.find((item) => item.id === line.serviceId);
+        const quantity = Number(line.quantity);
+        if (!service) {
+          throw new Error("Choisis un article valide dans le catalogue pour chaque ligne.");
+        }
+        if (!Number.isInteger(quantity) || quantity < 1) {
+          throw new Error("La quantité doit être un nombre entier supérieur à zéro.");
+        }
+        return {
+          serviceId: service.id,
+          serviceName: service.name,
+          quantity,
+          unitPriceCents: service.priceCents,
+        };
+      });
+      const totalPriceCents = selectedItems.reduce(
+        (total, item) => total + item.unitPriceCents * item.quantity,
+        0,
+      );
+      if (!Number.isSafeInteger(totalPriceCents) || totalPriceCents > 2_147_483_647) {
+        throw new Error("Le montant total du dépôt dépasse la limite autorisée.");
       }
       const payload = {
         reference,
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
-        serviceId: depositServiceId || undefined,
+        items: selectedItems.map(({ serviceId, quantity }) => ({ serviceId, quantity })),
         pickupAt: pickupAt ? new Date(pickupAt).toISOString() : undefined,
         locker: locker.trim(),
         paid,
@@ -697,9 +761,9 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
         reference,
         customerName: payload.customerName,
         customerPhone: payload.customerPhone || null,
-        serviceId: depositServiceId || null,
         status: "RECEIVED",
-        priceCents: service?.priceCents ?? 0,
+        priceCents: totalPriceCents,
+        items: selectedItems,
         paid,
         pickupAt: payload.pickupAt ?? null,
         locker: payload.locker || null,
@@ -732,7 +796,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
       setReceiptDeposit(savedDeposit);
       setCustomerName("");
       setCustomerPhone("");
-      setDepositServiceId("");
+      setDepositLines([{ id: "deposit-line-1", serviceId: "", quantity: "1" }]);
       setPickupAt("");
       setLocker("");
       setPaid(false);
@@ -747,9 +811,17 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
       const { jsPDF } = await import("jspdf");
       const pdf = new jsPDF({ unit: "mm", format: "a5" });
       const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
       const margin = 16;
       const contentWidth = pageWidth - margin * 2;
+      const receiptItems = getDepositItems(receiptDeposit, services);
       let y = 24;
+      const ensureReceiptSpace = (height: number) => {
+        if (y + height > pageHeight - 14) {
+          pdf.addPage();
+          y = 18;
+        }
+      };
 
       pdf.setFillColor(23, 107, 75);
       pdf.rect(0, 0, pageWidth, 48, "F");
@@ -768,28 +840,62 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
 
       y = 62;
       const addDetail = (label: string, value: string) => {
+        const lines = pdf.splitTextToSize(value, contentWidth * 0.58);
+        const detailHeight = Math.max(10, lines.length * 5 + 4);
+        ensureReceiptSpace(detailHeight + 2);
         pdf.setFont("helvetica", "normal");
         pdf.setFontSize(9);
         pdf.setTextColor(100, 116, 109);
         pdf.text(label, margin, y);
         pdf.setFont("helvetica", "bold");
         pdf.setTextColor(32, 45, 39);
-        const lines = pdf.splitTextToSize(value, contentWidth * 0.58);
         pdf.text(lines, pageWidth - margin, y, { align: "right" });
-        y += Math.max(10, lines.length * 5 + 4);
+        y += detailHeight;
         pdf.setDrawColor(222, 230, 225);
         pdf.line(margin, y - 2, pageWidth - margin, y - 2);
       };
 
       addDetail("Nom du client", receiptDeposit.customerName);
-      addDetail(
-        "Article déposé",
-        services.find((service) => service.id === receiptDeposit.serviceId)?.name ?? "Article non précisé",
-      );
       addDetail("Date du dépôt", dateTimeLabel(receiptDeposit.createdAt));
       addDetail("Date de récupération", dateTimeLabel(receiptDeposit.pickupAt));
       addDetail("Casier / repère", receiptDeposit.locker?.trim() || "Non renseigné");
       addDetail("Paiement", receiptDeposit.paid ? "Payé" : "Non payé");
+
+      ensureReceiptSpace(18);
+      y += 3;
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(8);
+      pdf.setTextColor(100, 116, 109);
+      pdf.text("ARTICLES", margin, y);
+      pdf.text("QTÉ", margin + 56, y, { align: "center" });
+      pdf.text("PRIX U. (FCFA)", margin + 86, y, { align: "right" });
+      pdf.text("SOUS-TOTAL", pageWidth - margin, y, { align: "right" });
+      y += 7;
+      pdf.setDrawColor(222, 230, 225);
+      pdf.line(margin, y - 2, pageWidth - margin, y - 2);
+      for (const item of receiptItems) {
+        const nameLines = pdf.splitTextToSize(item.serviceName, 45);
+        const rowHeight = Math.max(9, nameLines.length * 4 + 4);
+        ensureReceiptSpace(rowHeight + 2);
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(8);
+        pdf.setTextColor(32, 45, 39);
+        pdf.text(nameLines, margin, y);
+        pdf.text(String(item.quantity), margin + 56, y, { align: "center" });
+        pdf.text(money(item.unitPriceCents).replace(/[\u00a0\u202f]/g, " "), margin + 86, y, { align: "right" });
+        pdf.setFont("helvetica", "bold");
+        pdf.text(
+          money(item.unitPriceCents * item.quantity).replace(/[\u00a0\u202f]/g, " "),
+          pageWidth - margin,
+          y,
+          { align: "right" },
+        );
+        y += rowHeight;
+        pdf.setDrawColor(239, 242, 240);
+        pdf.line(margin, y - 2, pageWidth - margin, y - 2);
+      }
+
+      ensureReceiptSpace(34);
       y += 3;
       pdf.setFillColor(237, 246, 240);
       pdf.roundedRect(margin, y, contentWidth, 25, 3, 3, "F");
@@ -806,6 +912,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
       pdf.text(totalText, pageWidth - margin - 5, y + 17, { align: "right" });
       y += 30;
 
+      ensureReceiptSpace(16);
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(10);
       pdf.setTextColor(100, 116, 109);
@@ -1127,7 +1234,69 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
               <form className="form-stack" onSubmit={createDeposit}>
                 <label>Nom du client<input value={customerName} onChange={(event) => setCustomerName(event.target.value)} required /></label>
                 <label>Téléphone <span className="optional">Facultatif</span><input type="tel" value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} /></label>
-                <label>Article / prestation<select value={depositServiceId} onChange={(event) => setDepositServiceId(event.target.value)} required><option value="">Choisir un article</option>{services.map((service) => <option key={service.id} value={service.id}>{service.name} · {money(service.priceCents)} FCFA</option>)}</select></label>
+                <fieldset className="deposit-items-fieldset">
+                  <legend>Articles et prestations</legend>
+                  <div className="deposit-items-editor">
+                    {depositLines.map((line, index) => {
+                      const selectedService = services.find((service) => service.id === line.serviceId);
+                      return <div className="deposit-item-editor" key={line.id}>
+                        <label>
+                          Article / prestation {index + 1}
+                          <select
+                            value={line.serviceId}
+                            onChange={(event) => setDepositLines((current) => current.map((item) =>
+                              item.id === line.id ? { ...item, serviceId: event.target.value } : item))}
+                            required
+                          >
+                            <option value="">Choisir un article</option>
+                            {services.map((service) => (
+                              <option key={service.id} value={service.id}>
+                                {service.name} · {money(service.priceCents)} FCFA / pièce
+                              </option>
+                            ))}
+                          </select>
+                          {selectedService && <small>{money(selectedService.priceCents)} FCFA par pièce</small>}
+                        </label>
+                        <label>
+                          Quantité
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={line.quantity}
+                            onChange={(event) => setDepositLines((current) => current.map((item) =>
+                              item.id === line.id ? { ...item, quantity: event.target.value } : item))}
+                            required
+                          />
+                        </label>
+                        {depositLines.length > 1 && (
+                          <button
+                            className="button button-small button-danger"
+                            type="button"
+                            aria-label={`Retirer la ligne ${index + 1}`}
+                            onClick={() => setDepositLines((current) => current.filter((item) => item.id !== line.id))}
+                          >
+                            Retirer
+                          </button>
+                        )}
+                      </div>;
+                    })}
+                  </div>
+                  <button
+                    className="button button-small button-secondary"
+                    type="button"
+                    onClick={() => setDepositLines((current) => [
+                      ...current,
+                      { id: crypto.randomUUID(), serviceId: "", quantity: "1" },
+                    ])}
+                  >
+                    Ajouter un article
+                  </button>
+                  <div className="deposit-total-preview">
+                    <span>Total à payer</span>
+                    <strong>{money(draftTotalCents)} FCFA</strong>
+                  </div>
+                </fieldset>
                 <label>Date de retrait <span className="optional">Facultatif</span><input type="datetime-local" value={pickupAt} onChange={(event) => setPickupAt(event.target.value)} /></label>
                 <label>Casier / repère <span className="optional">Facultatif</span><input value={locker} onChange={(event) => setLocker(event.target.value)} /></label>
                 <fieldset className="payment-fieldset">
@@ -1185,7 +1354,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
             <div className="section-title"><div><p className="eyebrow">PERFORMANCE</p><h2>Rapport d'activité</h2></div><label className="month-picker">Période<input type="month" value={month} disabled={!isOnline} onChange={(event) => setMonth(event.target.value)} /></label></div>
             <h3 className="report-month">{monthLabel(month)}</h3>
             <div className="stats-grid report-stats"><StatCard label="Chiffre d'affaires" value={`${money(report?.revenueCents ?? 0)} FCFA`} detail="Dépôts enregistrés" /><StatCard label="Dépenses" value={`${money(report?.expensesCents ?? 0)} FCFA`} detail="Dépenses déclarées" tone="warm" /><StatCard label="Résultat net" value={`${money(report?.profitCents ?? 0)} FCFA`} detail="Chiffre d'affaires − dépenses" tone="green" /></div>
-            <div className="report-services"><div className="section-title"><div><p className="eyebrow">ACTIVITÉ</p><h2>Prestations les plus demandées</h2></div></div>{report?.topServices.length ? report.topServices.map((service, index) => <div className="popular-row" key={service.name}><span className="popular-rank">{String(index + 1).padStart(2, "0")}</span><strong>{service.name}</strong><span>{service.count} dépôt(s)</span></div>) : <p className="empty-state">Aucune prestation enregistrée pour ce mois.</p>}</div>
+            <div className="report-services"><div className="section-title"><div><p className="eyebrow">ACTIVITÉ</p><h2>Prestations les plus demandées</h2></div></div>{report?.topServices.length ? report.topServices.map((service, index) => <div className="popular-row" key={service.name}><span className="popular-rank">{String(index + 1).padStart(2, "0")}</span><strong>{service.name}</strong><span>{service.count} pièce(s)</span></div>) : <p className="empty-state">Aucune prestation enregistrée pour ce mois.</p>}</div>
           </section>}
 
           {view === "shop" && <section className="content-card shop-settings-card">
@@ -1254,12 +1423,23 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
             <p className="receipt-reference">Référence : {receiptDeposit.reference}</p>
             <dl className="receipt-details">
               <div><dt>Nom du client</dt><dd>{receiptDeposit.customerName}</dd></div>
-              <div><dt>Article déposé</dt><dd>{services.find((service) => service.id === receiptDeposit.serviceId)?.name ?? "Article non précisé"}</dd></div>
               <div><dt>Date du dépôt</dt><dd>{dateTimeLabel(receiptDeposit.createdAt)}</dd></div>
               <div><dt>Date de récupération</dt><dd>{dateTimeLabel(receiptDeposit.pickupAt)}</dd></div>
               <div><dt>Casier / repère</dt><dd>{receiptDeposit.locker?.trim() || "Non renseigné"}</dd></div>
               <div><dt>Paiement</dt><dd>{receiptDeposit.paid ? "Payé" : "Non payé"}</dd></div>
             </dl>
+            <div className="receipt-items">
+              <p>ARTICLES DÉPOSÉS</p>
+              {getDepositItems(receiptDeposit, services).map((item, index) => (
+                <div className="receipt-item" key={`${item.serviceId ?? item.serviceName}-${index}`}>
+                  <div>
+                    <strong>{item.serviceName}</strong>
+                    <small>{item.quantity} × {money(item.unitPriceCents)} FCFA</small>
+                  </div>
+                  <strong>{money(item.unitPriceCents * item.quantity)} FCFA</strong>
+                </div>
+              ))}
+            </div>
             <div className="receipt-total"><span>MONTANT TOTAL</span><strong>{money(receiptDeposit.priceCents)} FCFA</strong></div>
             <p className="receipt-thanks">Merci de votre confiance.</p>
           </article>

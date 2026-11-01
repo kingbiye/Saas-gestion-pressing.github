@@ -80,9 +80,10 @@ utiliser les routes métier.
 6. Générer une valeur longue et aléatoire pour `AUTH_SECRET`. Les secrets
    Supabase et administrateur doivent rester dans les variables Vercel, jamais
    dans une variable `NEXT_PUBLIC_*` ni dans Git.
-7. Appliquer le schéma à la base depuis un environnement de confiance. Le logo
-   reste nullable et le thème de couleur reçoit une valeur par défaut ; ces
-   changements préservent les données existantes :
+7. Appliquer le schéma à la base depuis un environnement de confiance avant de
+   déployer une version qui utilise de nouvelles tables. Les lignes d'articles
+   des dépôts sont ajoutées sans supprimer les dépôts existants ; le logo reste
+   nullable et le thème de couleur reçoit une valeur par défaut :
 
    ```bash
    npm run db:push
