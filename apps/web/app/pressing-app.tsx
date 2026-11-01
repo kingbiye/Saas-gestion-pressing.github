@@ -797,9 +797,13 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
       pdf.setFontSize(9);
       pdf.setTextColor(23, 107, 75);
       pdf.text("MONTANT TOTAL", margin + 5, y + 10);
+      const totalText = `${money(receiptDeposit.priceCents).replace(/[\u00a0\u202f]/g, " ")} FCFA`;
+      const amountMaxWidth = contentWidth - 10;
       pdf.setFontSize(18);
+      const amountFontSize = Math.min(18, (18 * amountMaxWidth) / pdf.getTextWidth(totalText));
+      pdf.setFontSize(amountFontSize);
       pdf.setTextColor(32, 45, 39);
-      pdf.text(`${money(receiptDeposit.priceCents)} FCFA`, pageWidth - margin - 5, y + 17, { align: "right" });
+      pdf.text(totalText, pageWidth - margin - 5, y + 17, { align: "right" });
       y += 30;
 
       pdf.setFont("helvetica", "normal");
