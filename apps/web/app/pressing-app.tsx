@@ -1,6 +1,14 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import {
+  getOfflineSnapshot,
+  getPendingDeposits,
+  PendingDeposit,
+  removePendingDeposit,
+  saveOfflineSnapshot,
+  savePendingDeposit,
+} from "./offline-store";
 
 type Service = { id: string; name: string; priceCents: number };
 type Deposit = {
@@ -8,12 +16,14 @@ type Deposit = {
   reference: string;
   customerName: string;
   customerPhone?: string | null;
+  serviceId?: string | null;
   status: string;
   priceCents: number;
   paid: boolean;
   pickupAt?: string | null;
   locker?: string | null;
   createdAt: string;
+  syncState?: "pending";
 };
 type Expense = { id: string; label: string; amountCents: number; incurredAt: string };
 type Report = {
@@ -33,12 +43,22 @@ type AdminTenant = {
   name: string;
   plan: string;
   isActive: boolean;
+  trialEndsAt: string;
+  subscriptionEndsAt: string | null;
   createdAt: string;
   _count: { users: number; deposits: number };
 };
 type View = "overview" | "deposits" | "catalog" | "expenses" | "reports" | "shop";
 type ShopColorTheme = "forest" | "ocean" | "royal" | "plum" | "terracotta" | "sunrise" | "slate";
 type ShopSettings = { name: string; logoDataUrl: string | null; colorTheme: ShopColorTheme };
+type OfflineSnapshot = {
+  services: Service[];
+  deposits: Deposit[];
+  expenses: Expense[];
+  report: Report | null;
+  billing: Billing;
+  shop: ShopSettings;
+};
 
 const SHOP_COLOR_THEMES: { id: ShopColorTheme; name: string; swatch: string }[] = [
   { id: "forest", name: "Vert forêt", swatch: "#176b4b" },
@@ -82,6 +102,11 @@ function monthLabel(month: string) {
     .format(new Date(`${month}-01T00:00:00.000Z`));
 }
 
+function dateTimeLabel(date: string | null | undefined) {
+  if (!date) return "Non précisée";
+  return new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short" }).format(new Date(date));
+}
+
 function readToken(key: string) {
   return localStorage.getItem(key) ?? sessionStorage.getItem(key);
 }
@@ -89,6 +114,28 @@ function readToken(key: string) {
 function clearToken(key: string) {
   localStorage.removeItem(key);
   sessionStorage.removeItem(key);
+}
+
+function currentOfflineUserKey(): string {
+  const token = readToken("pressing_token");
+  const payload = token?.split(".")[0];
+  if (!payload) throw new Error("Reconnecte-toi en ligne pour préparer le mode hors connexion.");
+  try {
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const decoded = JSON.parse(atob(base64 + "=".repeat((4 - base64.length % 4) % 4))) as { sub?: unknown };
+    if (typeof decoded.sub !== "string" || !decoded.sub) throw new Error();
+    return decoded.sub;
+  } catch {
+    throw new Error("La session ne permet pas d’identifier le cache hors ligne. Reconnecte-toi.");
+  }
+}
+
+function mergePendingDeposits(deposits: Deposit[], pending: PendingDeposit<Deposit>[]): Deposit[] {
+  const serverReferences = new Set(deposits.map((deposit) => deposit.reference));
+  const drafts = pending
+    .filter((record) => !serverReferences.has(record.reference))
+    .map((record) => ({ ...record.deposit, syncState: "pending" as const }));
+  return [...drafts, ...deposits];
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -151,17 +198,21 @@ function LoadingScreen() {
   );
 }
 
-function DepositRow({ deposit, onAdvance, onPaymentChange }: {
+function DepositRow({ deposit, onAdvance, onPaymentChange, onCancelPending, onPrintReceipt }: {
   deposit: Deposit;
   onAdvance: (deposit: Deposit) => void;
   onPaymentChange: (deposit: Deposit, paid: boolean) => void;
+  onCancelPending: (deposit: Deposit) => void;
+  onPrintReceipt: (deposit: Deposit) => void;
 }) {
   const next = STATUS_ORDER[STATUS_ORDER.indexOf(deposit.status) + 1];
   return (
     <tr>
       <td><strong>{deposit.customerName}</strong><small>#{deposit.reference}</small></td>
       <td>{deposit.customerPhone || "—"}</td>
-      <td><span className={`status status-${deposit.status.toLowerCase()}`}>{STATUS_LABELS[deposit.status] ?? deposit.status}</span></td>
+      <td>{deposit.syncState === "pending"
+        ? <span className="status status-received">En attente de synchronisation</span>
+        : <span className={`status status-${deposit.status.toLowerCase()}`}>{STATUS_LABELS[deposit.status] ?? deposit.status}</span>}</td>
       <td>{money(deposit.priceCents)} FCFA</td>
       <td><div className="payment-options" role="group" aria-label={`Paiement de ${deposit.customerName}`}>
         {[{ value: true, label: "Payé" }, { value: false, label: "Non payé" }].map((option) => (
@@ -170,13 +221,19 @@ function DepositRow({ deposit, onAdvance, onPaymentChange }: {
               type="radio"
               name={`payment-${deposit.id}`}
               checked={deposit.paid === option.value}
+              disabled={deposit.syncState === "pending"}
               onChange={() => onPaymentChange(deposit, option.value)}
             />
             {option.label}
           </label>
         ))}
       </div></td>
-      <td>{next ? <button className="button button-small button-secondary" onClick={() => onAdvance(deposit)}>Passer à « {STATUS_LABELS[next]} »</button> : <span className="muted">Terminé</span>}</td>
+      <td className="action-cell">
+        <button className="button button-small button-secondary" onClick={() => onPrintReceipt(deposit)}>Reçu</button>
+        {deposit.syncState === "pending"
+          ? <button className="button button-small button-danger" onClick={() => onCancelPending(deposit)}>Annuler</button>
+          : next ? <button className="button button-small button-secondary" onClick={() => onAdvance(deposit)}>Passer à « {STATUS_LABELS[next]} »</button> : <span className="muted">Terminé</span>}
+      </td>
     </tr>
   );
 }
@@ -200,6 +257,10 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   // true tant que la session et les données de la boutique ne sont pas chargées :
   // évite d'afficher l'interface par défaut ("Mon pressing", thème vert, 0 FCFA).
   const [booting, setBooting] = useState(true);
+  const [isOnline, setIsOnline] = useState(true);
+  const [offlineMode, setOfflineMode] = useState(false);
+  const [pendingDepositCount, setPendingDepositCount] = useState(0);
+  const [hasBusinessData, setHasBusinessData] = useState(false);
   const [view, setView] = useState<View>("overview");
   const [services, setServices] = useState<Service[]>([]);
   const [deposits, setDeposits] = useState<Deposit[]>([]);
@@ -210,6 +271,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   const shopSettingsRevision = useRef(0);
   const shopSettingsWrites = useRef(0);
   const preferredShopTheme = useRef<ShopColorTheme | null>(null);
+  const depositSyncInProgress = useRef(false);
   const [tenants, setTenants] = useState<AdminTenant[]>([]);
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [serviceName, setServiceName] = useState("");
@@ -221,6 +283,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   const [pickupAt, setPickupAt] = useState("");
   const [locker, setLocker] = useState("");
   const [paid, setPaid] = useState(false);
+  const [receiptDeposit, setReceiptDeposit] = useState<Deposit | null>(null);
   const [expenseLabel, setExpenseLabel] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
 
@@ -241,6 +304,8 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
       setDeposits([]);
       setExpenses([]);
       setReport(null);
+      setHasBusinessData(false);
+      setOfflineMode(false);
       return;
     }
     const query = new URLSearchParams({ month: selectedMonth });
@@ -250,15 +315,148 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
       request<Expense[]>("/expenses"),
       request<Report>(`/reports/monthly?${query}`),
     ]);
+    const userKey = currentOfflineUserKey();
+    let pending: PendingDeposit<Deposit>[] = [];
+    try {
+      pending = await getPendingDeposits<Deposit>(userKey);
+    } catch (cause) {
+      setError(cause instanceof Error
+        ? `Les données sont en ligne, mais le stockage des dépôts hors ligne est indisponible : ${cause.message}`
+        : "Les données sont en ligne, mais le stockage des dépôts hors ligne est indisponible.");
+    }
+    const serverReferences = new Set(depositList.map((deposit) => deposit.reference));
+    for (const item of pending) {
+      if (serverReferences.has(item.reference)) {
+        try {
+          await removePendingDeposit(userKey, item.reference);
+        } catch (cause) {
+          setError(cause instanceof Error
+            ? `Le dépôt ${item.reference} est bien sur le serveur, mais sa copie locale n’a pas pu être nettoyée : ${cause.message}`
+            : `Le dépôt ${item.reference} est sur le serveur, mais sa copie locale n’a pas pu être nettoyée.`);
+        }
+      }
+    }
+    const remainingPending = pending.filter((item) => !serverReferences.has(item.reference));
     setServices(catalog);
-    setDeposits(depositList);
+    setDeposits(mergePendingDeposits(depositList, remainingPending));
     setExpenses(expenseList);
     setReport(monthlyReport);
+    setHasBusinessData(true);
+    setPendingDepositCount(remainingPending.length);
+    setOfflineMode(false);
+    try {
+      await saveOfflineSnapshot(userKey, {
+        services: catalog,
+        deposits: depositList,
+        expenses: expenseList,
+        report: monthlyReport,
+        billing: billingStatus,
+        shop: shopSettings,
+      } satisfies OfflineSnapshot);
+    } catch (cause) {
+      setError(cause instanceof Error
+        ? `Les données sont chargées, mais n’ont pas pu être mises en cache hors ligne : ${cause.message}`
+        : "Les données sont chargées, mais le cache hors ligne n’a pas pu être enregistré.");
+    }
   }, [month]);
+
+  const loadOfflineSnapshot = useCallback(async () => {
+    const userKey = currentOfflineUserKey();
+    const snapshot = await getOfflineSnapshot<OfflineSnapshot>(userKey);
+    if (!snapshot) throw new Error("Aucune donnée n’a encore été enregistrée hors ligne. Connecte-toi à Internet puis réessaie.");
+    if (!snapshot.billing.active || new Date(snapshot.billing.expiresAt).getTime() <= Date.now()) {
+      throw new Error("L’accès à cette boutique a expiré. Reconnecte-toi à Internet pour renouveler l’accès.");
+    }
+    const pending = await getPendingDeposits<Deposit>(userKey);
+    setBilling(snapshot.billing);
+    setShop(snapshot.shop);
+    setServices(snapshot.services);
+    setDeposits(mergePendingDeposits(snapshot.deposits, pending));
+    setExpenses(snapshot.expenses);
+    setReport(snapshot.report);
+    setHasBusinessData(true);
+    setPendingDepositCount(pending.length);
+    setOfflineMode(true);
+  }, []);
+
+  const syncPendingDeposits = useCallback(async () => {
+    if (depositSyncInProgress.current || !navigator.onLine || !readToken("pressing_token")) return;
+    depositSyncInProgress.current = true;
+    try {
+      const userKey = currentOfflineUserKey();
+      const pending = await getPendingDeposits<Deposit>(userKey);
+      setPendingDepositCount(pending.length);
+      if (!pending.length) return;
+      let synced = 0;
+      for (const item of pending) {
+        try {
+          await request<Deposit>("/deposits", {
+            method: "POST",
+            body: JSON.stringify(item.payload),
+          });
+          synced += 1;
+        } catch (cause) {
+          if (cause instanceof TypeError || !navigator.onLine) break;
+          setError(`Le dépôt ${item.reference} reste en attente : ${cause instanceof Error ? cause.message : "échec de synchronisation"}`);
+          break;
+        }
+      }
+      const remaining = await getPendingDeposits<Deposit>(userKey);
+      setPendingDepositCount(remaining.length);
+      if (!navigator.onLine) return;
+      await refreshBusiness();
+      if (synced > 0) setMessage(`${synced} dépôt(s) synchronisé(s) avec le serveur.`);
+    } finally {
+      depositSyncInProgress.current = false;
+    }
+  }, [refreshBusiness]);
 
   const refreshTenants = useCallback(async () => {
     setTenants(await request<AdminTenant[]>("/admin/tenants"));
   }, []);
+
+  useEffect(() => {
+    setIsOnline(navigator.onLine);
+    const onOnline = () => {
+      setIsOnline(true);
+      syncPendingDeposits().catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : "La synchronisation des dépôts en attente a échoué.");
+      });
+    };
+    const onOffline = () => {
+      setIsOnline(false);
+      if (!adminPage && authenticated) setOfflineMode(true);
+    };
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/service-worker.js").then(async () => {
+        await navigator.serviceWorker.ready;
+        const urls = new Set(["/", "/manifest.webmanifest", "/icon.svg"]);
+        for (const resource of performance.getEntriesByType("resource")) {
+          const url = new URL(resource.name);
+          if (url.origin === location.origin
+            && (url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/pressing-scenes/"))) {
+            urls.add(`${url.pathname}${url.search}`);
+          }
+        }
+        const cache = await caches.open("pressing-os-shell-v1");
+        const results = await Promise.allSettled([...urls].map((url) => cache.add(url)));
+        const failures = results.filter((result) => result.status === "rejected").length;
+        if (failures > 0) {
+          setError(`${failures} élément(s) de l’application n’ont pas pu être préparés pour le hors connexion. Réessaie avec une connexion stable.`);
+        }
+      }).catch((cause: unknown) => {
+        setError(cause instanceof Error
+          ? `L’application ne pourra pas être ouverte hors ligne : ${cause.message}`
+          : "L’application ne pourra pas être ouverte hors ligne.");
+      });
+    }
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, [adminPage, authenticated, syncPendingDeposits]);
 
   useEffect(() => {
     if (adminPage) {
@@ -290,13 +488,24 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
     }
     setAuthenticated(true);
     refreshBusiness()
-      .catch((cause: unknown) => {
+      .then(() => syncPendingDeposits().catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : "La synchronisation des dépôts en attente a échoué.");
+      }))
+      .catch(async (cause: unknown) => {
+        if (!navigator.onLine || cause instanceof TypeError) {
+          try {
+            await loadOfflineSnapshot();
+          } catch (offlineCause) {
+            setError(offlineCause instanceof Error ? offlineCause.message : "Impossible de charger les données hors ligne.");
+          }
+          return;
+        }
         clearToken("pressing_token");
         setAuthenticated(false);
         setError(cause instanceof Error ? cause.message : "Chargement de l'espace impossible.");
       })
       .finally(() => setBooting(false));
-  }, [adminPage, refreshBusiness, refreshTenants]);
+  }, [adminPage, loadOfflineSnapshot, refreshBusiness, refreshTenants, syncPendingDeposits]);
 
   const openDeposits = deposits.filter((deposit) => deposit.status !== "PICKED_UP").length;
   const readyDeposits = deposits.filter((deposit) => deposit.status === "READY").length;
@@ -367,9 +576,13 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
     }
   }
 
-  async function runAction(action: () => Promise<void>) {
+  async function runAction(action: () => Promise<void>, allowOffline = false) {
     setError("");
     setMessage("");
+    if (!isOnline && !allowOffline) {
+      setError("Cette action nécessite une connexion Internet. Hors ligne, tu peux consulter les données chargées et enregistrer de nouveaux dépôts.");
+      return;
+    }
     setLoading(true);
     try {
       await action();
@@ -457,25 +670,71 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   async function createDeposit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await runAction(async () => {
-      await request("/deposits", {
-        method: "POST",
-        body: JSON.stringify({
-          customerName: customerName.trim(),
-          customerPhone: customerPhone.trim(),
-          serviceId: depositServiceId || undefined,
-          pickupAt: pickupAt || undefined,
-          locker: locker.trim(),
-          paid,
-        }),
-      });
+      const reference = `PWA-${crypto.randomUUID()}`;
+      if (!navigator.onLine && !hasBusinessData) {
+        throw new Error("Connecte-toi à Internet pour charger le catalogue avant d’enregistrer un dépôt hors ligne.");
+      }
+      if (!navigator.onLine && (!billing?.active || new Date(billing.expiresAt).getTime() <= Date.now())) {
+        throw new Error("L’accès de la boutique a expiré. Connecte-toi à Internet pour renouveler l’accès avant d’enregistrer.");
+      }
+      const service = services.find((item) => item.id === depositServiceId);
+      if (depositServiceId && !service) {
+        throw new Error("Cette prestation n’est pas disponible dans le catalogue chargé. Connecte-toi pour actualiser les données.");
+      }
+      const payload = {
+        reference,
+        customerName: customerName.trim(),
+        customerPhone: customerPhone.trim(),
+        serviceId: depositServiceId || undefined,
+        pickupAt: pickupAt ? new Date(pickupAt).toISOString() : undefined,
+        locker: locker.trim(),
+        paid,
+      };
+      const draft: Deposit = {
+        id: `offline-${reference}`,
+        reference,
+        customerName: payload.customerName,
+        customerPhone: payload.customerPhone || null,
+        serviceId: depositServiceId || null,
+        status: "RECEIVED",
+        priceCents: service?.priceCents ?? 0,
+        paid,
+        pickupAt: payload.pickupAt ?? null,
+        locker: payload.locker || null,
+        createdAt: new Date().toISOString(),
+        syncState: "pending",
+      };
+      const userKey = currentOfflineUserKey();
+      await savePendingDeposit(userKey, reference, payload, draft);
+      let savedDeposit = draft;
+      if (navigator.onLine) {
+        let posted = false;
+        try {
+          savedDeposit = await request<Deposit>("/deposits", { method: "POST", body: JSON.stringify(payload) });
+          posted = true;
+          await refreshBusiness();
+        } catch (cause) {
+          if (!posted && !(cause instanceof TypeError) && navigator.onLine) {
+            await removePendingDeposit(userKey, reference);
+            throw cause;
+          }
+          setDeposits((current) => mergePendingDeposits(current, [{ key: `${userKey}:${reference}`, userKey, reference, payload, deposit: draft }]));
+          setPendingDepositCount((count) => count + 1);
+          setMessage(`Dépôt ${reference} enregistré sur cet appareil ; il sera synchronisé au retour d’Internet.`);
+        }
+      } else {
+        setDeposits((current) => mergePendingDeposits(current, [{ key: `${userKey}:${reference}`, userKey, reference, payload, deposit: draft }]));
+        setPendingDepositCount((count) => count + 1);
+        setMessage(`Dépôt ${reference} enregistré sur cet appareil ; il sera synchronisé au retour d’Internet.`);
+      }
+      setReceiptDeposit(savedDeposit);
       setCustomerName("");
       setCustomerPhone("");
       setDepositServiceId("");
       setPickupAt("");
       setLocker("");
       setPaid(false);
-      await refreshBusiness();
-    });
+    }, true);
   }
 
   async function createExpense(event: FormEvent<HTMLFormElement>) {
@@ -498,6 +757,17 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
     });
   }
 
+  async function cancelPendingDeposit(deposit: Deposit) {
+    if (!window.confirm(`Annuler le dépôt ${deposit.reference} ? Il ne sera pas envoyé au serveur.`)) return;
+    await runAction(async () => {
+      const userKey = currentOfflineUserKey();
+      await removePendingDeposit(userKey, deposit.reference);
+      setDeposits((current) => current.filter((item) => item.reference !== deposit.reference));
+      setPendingDepositCount((count) => Math.max(0, count - 1));
+      setMessage(`Le dépôt ${deposit.reference} a été annulé sur cet appareil.`);
+    }, true);
+  }
+
   async function signOut() {
     clearToken("pressing_token");
     clearToken("pressing_admin_token");
@@ -515,6 +785,14 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
         method: "PATCH",
         body: JSON.stringify({ isActive: !tenant.isActive }),
       });
+      await refreshTenants();
+    });
+  }
+
+  async function unlockExpiredTenant(tenant: AdminTenant) {
+    if (!window.confirm(`Débloquer ${tenant.name} et prolonger son accès de 30 jours à partir d’aujourd’hui ?`)) return;
+    await runAction(async () => {
+      await request(`/admin/tenants/${tenant.id}`, { method: "POST" });
       await refreshTenants();
     });
   }
@@ -569,6 +847,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
                   <label>Adresse e-mail<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /></label>
                   <label>Mot de passe<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} autoComplete={register ? "new-password" : "current-password"} required /></label>
                   <label className="check-row"><input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} /> Rester connecté</label>
+                  {!adminPage && <small className="offline-login-note">À cocher pour rouvrir l’application hors connexion après fermeture du navigateur.</small>}
                 </>
               )}
               <button className="button button-primary button-full" disabled={loading}>{loading ? "Veuillez patienter…" : forgotMode ? resetToken ? "Enregistrer le mot de passe" : "Envoyer les instructions" : adminPage || !register ? "Se connecter" : "Créer mon espace"}</button>
@@ -594,7 +873,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
       <main className="admin-shell">
         <header className="admin-topbar"><a className="brand" href="/"><span className="brand-mark">P</span> pressing<span>OS</span></a><span className="admin-chip">Administration plateforme</span><button className="button button-secondary" onClick={signOut}>Se déconnecter</button></header>
         <section className="workspace admin-workspace">
-          <PageHeading eyebrow="SUPERVISION" title="Gestion des boutiques" description="Bloquez temporairement l'accès d'une boutique sans supprimer ses données, ou réactivez-la à tout moment." />
+          <PageHeading eyebrow="SUPERVISION" title="Gestion des boutiques" description="Bloquez ou réactivez une boutique. Après la période d’essai, vous pouvez lui accorder 30 jours d’accès supplémentaires." />
           <ErrorNotice message={error} onClose={() => setError("")} />
           <div className="stats-grid">
             <StatCard label="Boutiques" value={String(tenants.length)} detail="Espaces enregistrés" />
@@ -603,7 +882,23 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
           </div>
           <section className="content-card">
             <div className="section-title"><div><p className="eyebrow">COMPTES CLIENTS</p><h2>Boutiques inscrites</h2></div><span className="count-pill">{tenants.length}</span></div>
-            {tenants.length ? <div className="table-wrap"><table><thead><tr><th>Boutique</th><th>Activité</th><th>Plan</th><th>État</th><th>Actions</th></tr></thead><tbody>{tenants.map((tenant) => <tr key={tenant.id}><td><strong>{tenant.name}</strong><small>{tenant._count.users} utilisateur(s) · {tenant._count.deposits} dépôt(s)</small></td><td>{new Date(tenant.createdAt).toLocaleDateString("fr-FR")}</td><td>{tenant.plan}</td><td><span className={`status ${tenant.isActive ? "status-ready" : "status-received"}`}>{tenant.isActive ? "En service" : "Bloquée"}</span></td><td className="action-cell"><button className={`button button-small ${tenant.isActive ? "button-danger" : "button-secondary"}`} onClick={() => updateTenant(tenant)}>{tenant.isActive ? "Bloquer la boutique" : "Débloquer la boutique"}</button><button className="button button-small button-danger" onClick={() => removeTenant(tenant)}>Supprimer</button></td></tr>)}</tbody></table></div> : <p className="empty-state">Aucune boutique enregistrée pour le moment.</p>}
+            {tenants.length ? <div className="table-wrap"><table><thead><tr><th>Boutique</th><th>Inscription</th><th>Plan</th><th>Accès</th><th>État</th><th>Actions</th></tr></thead><tbody>{tenants.map((tenant) => {
+              const accessExpiresAt = new Date(tenant.subscriptionEndsAt ?? tenant.trialEndsAt);
+              const accessExpired = accessExpiresAt.getTime() <= Date.now();
+              return <tr key={tenant.id}>
+                <td><strong>{tenant.name}</strong><small>{tenant._count.users} utilisateur(s) · {tenant._count.deposits} dépôt(s)</small></td>
+                <td>{new Date(tenant.createdAt).toLocaleDateString("fr-FR")}</td>
+                <td>{tenant.plan === "TRIAL" ? "Essai" : tenant.plan === "MONTHLY" ? "Mensuel" : tenant.plan}</td>
+                <td>{accessExpiresAt.toLocaleDateString("fr-FR")}</td>
+                <td><span className={`status ${tenant.isActive && !accessExpired ? "status-ready" : "status-received"}`}>{!tenant.isActive ? "Suspendue" : accessExpired ? "Accès expiré" : "En service"}</span></td>
+                <td className="action-cell">
+                  {accessExpired
+                    ? <button className="button button-small button-secondary" onClick={() => unlockExpiredTenant(tenant)}>Débloquer 30 jours</button>
+                    : <button className={`button button-small ${tenant.isActive ? "button-danger" : "button-secondary"}`} onClick={() => updateTenant(tenant)}>{tenant.isActive ? "Bloquer la boutique" : "Réactiver la boutique"}</button>}
+                  <button className="button button-small button-danger" onClick={() => removeTenant(tenant)}>Supprimer</button>
+                </td>
+              </tr>;
+            })}</tbody></table></div> : <p className="empty-state">Aucune boutique enregistrée pour le moment.</p>}
           </section>
         </section>
       </main>
@@ -681,6 +976,12 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
         </header>
         <div className="workspace">
           <PageHeading {...heading[view]} />
+          {(!isOnline || pendingDepositCount > 0) && <div className={`offline-banner ${isOnline ? "offline-banner-online" : ""}`} role="status">
+            <span>{isOnline
+              ? `${pendingDepositCount} dépôt(s) en attente de synchronisation.`
+              : `Hors connexion${offlineMode ? " — consultation et nouveaux dépôts disponibles" : " — connecte-toi d’abord pour charger les données"}.${pendingDepositCount ? ` ${pendingDepositCount} dépôt(s) en attente.` : ""}`}</span>
+            {isOnline && pendingDepositCount > 0 && <button className="button button-small button-secondary" onClick={() => syncPendingDeposits().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "Synchronisation impossible."))}>Synchroniser</button>}
+          </div>}
           <ErrorNotice message={error} onClose={() => setError("")} />
           {message && <div className="notice notice-success" role="status">{message}</div>}
 
@@ -725,7 +1026,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
             <div className="overview-grid">
               <section className="content-card">
                 <div className="section-title"><div><p className="eyebrow">DERNIÈRES COMMANDES</p><h2>Suivi des dépôts</h2></div><button className="text-button" onClick={() => setView("deposits")}>Voir tout →</button></div>
-                {deposits.length ? <div className="table-wrap"><table><thead><tr><th>Client</th><th>État</th><th>Montant</th><th>Paiement</th></tr></thead><tbody>{deposits.slice(0, 5).map((deposit) => <tr key={deposit.id}><td><strong>{deposit.customerName}</strong><small>#{deposit.reference}</small></td><td><span className={`status status-${deposit.status.toLowerCase()}`}>{STATUS_LABELS[deposit.status] ?? deposit.status}</span></td><td>{money(deposit.priceCents)} FCFA</td><td>{deposit.paid ? <span className="paid-label">Payé</span> : <span className="due-label">À régler</span>}</td></tr>)}</tbody></table></div> : <p className="empty-state">Vos nouveaux dépôts apparaîtront ici.</p>}
+                {deposits.length ? <div className="table-wrap"><table><thead><tr><th>Client</th><th>État</th><th>Montant</th><th>Paiement</th></tr></thead><tbody>{deposits.slice(0, 5).map((deposit) => <tr key={deposit.id}><td><strong>{deposit.customerName}</strong><small>#{deposit.reference}</small></td><td>{deposit.syncState === "pending" ? <span className="status status-received">À synchroniser</span> : <span className={`status status-${deposit.status.toLowerCase()}`}>{STATUS_LABELS[deposit.status] ?? deposit.status}</span>}</td><td>{money(deposit.priceCents)} FCFA</td><td>{deposit.paid ? <span className="paid-label">Payé</span> : <span className="due-label">À régler</span>}</td></tr>)}</tbody></table></div> : <p className="empty-state">Vos nouveaux dépôts apparaîtront ici.</p>}
               </section>
               <section className="content-card">
                 <div className="section-title"><div><p className="eyebrow">RÉSUMÉ DU MOIS</p><h2>{monthLabel(month)}</h2></div><button className="button button-small button-secondary" onClick={() => setView("reports")}>Rapport</button></div>
@@ -741,7 +1042,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
               <form className="form-stack" onSubmit={createDeposit}>
                 <label>Nom du client<input value={customerName} onChange={(event) => setCustomerName(event.target.value)} required /></label>
                 <label>Téléphone <span className="optional">Facultatif</span><input type="tel" value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} /></label>
-                <label>Prestation<select value={depositServiceId} onChange={(event) => setDepositServiceId(event.target.value)}><option value="">Choisir un service</option>{services.map((service) => <option key={service.id} value={service.id}>{service.name} · {money(service.priceCents)} FCFA</option>)}</select></label>
+                <label>Article / prestation<select value={depositServiceId} onChange={(event) => setDepositServiceId(event.target.value)} required><option value="">Choisir un article</option>{services.map((service) => <option key={service.id} value={service.id}>{service.name} · {money(service.priceCents)} FCFA</option>)}</select></label>
                 <label>Date de retrait <span className="optional">Facultatif</span><input type="datetime-local" value={pickupAt} onChange={(event) => setPickupAt(event.target.value)} /></label>
                 <label>Casier / repère <span className="optional">Facultatif</span><input value={locker} onChange={(event) => setLocker(event.target.value)} /></label>
                 <fieldset className="payment-fieldset">
@@ -759,12 +1060,12 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
                     </label>
                   </div>
                 </fieldset>
-                <button className="button button-primary" disabled={loading}>Enregistrer le dépôt</button>
+                <button className="button button-primary" disabled={loading}>{!isOnline ? "Enregistrer sur cet appareil" : "Enregistrer le dépôt"}</button>
               </form>
             </section>
             <section className="content-card">
               <div className="section-title"><div><p className="eyebrow">ATELIER</p><h2>Tous les dépôts</h2></div><span className="count-pill">{deposits.length}</span></div>
-              {deposits.length ? <div className="table-wrap"><table><thead><tr><th>Client</th><th>Téléphone</th><th>État</th><th>Montant</th><th>Paiement</th><th>Action</th></tr></thead><tbody>{deposits.map((deposit) => <DepositRow key={deposit.id} deposit={deposit} onAdvance={(item) => updateDeposit(item, { status: STATUS_ORDER[STATUS_ORDER.indexOf(item.status) + 1] })} onPaymentChange={(item, isPaid) => updateDeposit(item, { paid: isPaid })} />)}</tbody></table></div> : <p className="empty-state">Aucun dépôt pour le moment. Enregistrez la première commande.</p>}
+              {deposits.length ? <div className="table-wrap"><table><thead><tr><th>Client</th><th>Téléphone</th><th>État</th><th>Montant</th><th>Paiement</th><th>Action</th></tr></thead><tbody>{deposits.map((deposit) => <DepositRow key={deposit.id} deposit={deposit} onAdvance={(item) => updateDeposit(item, { status: STATUS_ORDER[STATUS_ORDER.indexOf(item.status) + 1] })} onPaymentChange={(item, isPaid) => updateDeposit(item, { paid: isPaid })} onCancelPending={(item) => void cancelPendingDeposit(item)} onPrintReceipt={setReceiptDeposit} />)}</tbody></table></div> : <p className="empty-state">Aucun dépôt pour le moment. Enregistrez la première commande.</p>}
             </section>
           </div>}
 
@@ -773,7 +1074,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
             <form className="inline-form" onSubmit={saveService}>
               <label>Nom du service<input value={serviceName} onChange={(event) => setServiceName(event.target.value)} placeholder="Ex. Lavage et repassage" required /></label>
               <label>Prix (FCFA)<input type="number" min="0" step="1" value={servicePrice} onChange={(event) => setServicePrice(event.target.value)} placeholder="Ex. 2500" required /></label>
-              <button className="button button-primary" disabled={loading}>{editingService ? "Enregistrer" : "Ajouter au catalogue"}</button>
+              <button className="button button-primary" disabled={loading || !isOnline}>{editingService ? "Enregistrer" : "Ajouter au catalogue"}</button>
               {editingService && <button type="button" className="button button-secondary" onClick={() => { setEditingService(null); setServiceName(""); setServicePrice(""); }}>Annuler</button>}
             </form>
             <div className="service-grid">{services.map((service) => <article className="service-card" key={service.id}><div className="service-mark">◇</div><div className="service-info"><strong>{service.name}</strong><span>{money(service.priceCents)} FCFA</span></div><div className="service-actions"><button className="icon-button" title="Modifier" aria-label={`Modifier ${service.name}`} onClick={() => { setEditingService(service); setServiceName(service.name); setServicePrice(String(service.priceCents / 100)); }}>✎</button><button className="icon-button icon-danger" title="Supprimer" aria-label={`Supprimer ${service.name}`} onClick={() => runAction(async () => { if (!window.confirm(`Supprimer le service « ${service.name} » ?`)) return; await request(`/catalog/${service.id}`, { method: "DELETE" }); await refreshBusiness(); })}>×</button></div></article>)}</div>
@@ -786,7 +1087,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
               <form className="form-stack" onSubmit={createExpense}>
                 <label>Libellé<input value={expenseLabel} onChange={(event) => setExpenseLabel(event.target.value)} placeholder="Ex. Électricité" required /></label>
                 <label>Montant (FCFA)<input type="number" min="1" step="1" value={expenseAmount} onChange={(event) => setExpenseAmount(event.target.value)} required /></label>
-                <button className="button button-primary" disabled={loading}>Enregistrer la dépense</button>
+                <button className="button button-primary" disabled={loading || !isOnline}>Enregistrer la dépense</button>
               </form>
             </section>
             <section className="content-card">
@@ -796,7 +1097,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
           </div>}
 
           {view === "reports" && <section className="content-card report-card">
-            <div className="section-title"><div><p className="eyebrow">PERFORMANCE</p><h2>Rapport d'activité</h2></div><label className="month-picker">Période<input type="month" value={month} onChange={(event) => setMonth(event.target.value)} /></label></div>
+            <div className="section-title"><div><p className="eyebrow">PERFORMANCE</p><h2>Rapport d'activité</h2></div><label className="month-picker">Période<input type="month" value={month} disabled={!isOnline} onChange={(event) => setMonth(event.target.value)} /></label></div>
             <h3 className="report-month">{monthLabel(month)}</h3>
             <div className="stats-grid report-stats"><StatCard label="Chiffre d'affaires" value={`${money(report?.revenueCents ?? 0)} FCFA`} detail="Dépôts enregistrés" /><StatCard label="Dépenses" value={`${money(report?.expensesCents ?? 0)} FCFA`} detail="Dépenses déclarées" tone="warm" /><StatCard label="Résultat net" value={`${money(report?.profitCents ?? 0)} FCFA`} detail="Chiffre d'affaires − dépenses" tone="green" /></div>
             <div className="report-services"><div className="section-title"><div><p className="eyebrow">ACTIVITÉ</p><h2>Prestations les plus demandées</h2></div></div>{report?.topServices.length ? report.topServices.map((service, index) => <div className="popular-row" key={service.name}><span className="popular-rank">{String(index + 1).padStart(2, "0")}</span><strong>{service.name}</strong><span>{service.count} dépôt(s)</span></div>) : <p className="empty-state">Aucune prestation enregistrée pour ce mois.</p>}</div>
@@ -853,6 +1154,28 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
           </section>}
         </div>
       </section>
+      {receiptDeposit && <div className="receipt-backdrop">
+        <section className="receipt-modal" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
+          <div className="receipt-actions">
+            <button className="button button-secondary" onClick={() => setReceiptDeposit(null)}>Fermer</button>
+            <button className="button button-primary" onClick={() => window.print()}>Imprimer / télécharger en PDF</button>
+          </div>
+          <article className="receipt">
+            <p className="eyebrow">REÇU DE DÉPÔT</p>
+            <h1 id="receipt-title">{shop.name || "Mon pressing"}</h1>
+            <p className="receipt-reference">Référence : {receiptDeposit.reference}</p>
+            <dl className="receipt-details">
+              <div><dt>Nom du client</dt><dd>{receiptDeposit.customerName}</dd></div>
+              <div><dt>Article déposé</dt><dd>{services.find((service) => service.id === receiptDeposit.serviceId)?.name ?? "Article non précisé"}</dd></div>
+              <div><dt>Date du dépôt</dt><dd>{dateTimeLabel(receiptDeposit.createdAt)}</dd></div>
+              <div><dt>Date de récupération</dt><dd>{dateTimeLabel(receiptDeposit.pickupAt)}</dd></div>
+              <div><dt>Paiement</dt><dd>{receiptDeposit.paid ? "Payé" : "Non payé"}</dd></div>
+              <div><dt>Montant</dt><dd>{money(receiptDeposit.priceCents)} FCFA</dd></div>
+            </dl>
+            <p className="receipt-thanks">Merci de votre confiance.</p>
+          </article>
+        </section>
+      </div>}
     </main>
   );
 }

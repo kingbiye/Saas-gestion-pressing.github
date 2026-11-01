@@ -103,8 +103,17 @@ publique distincte ni configuration CORS de production n'est nécessaire.
 - `TRIAL_DAYS` : durée de l'essai en jours (10 par défaut).
 - Le paiement en ligne est temporairement désactivé. Les boutiques doivent
   contacter l'administrateur de la plateforme pour renouveler leur accès.
+  Depuis l'espace admin, une boutique arrivée à expiration peut être débloquée
+  avec une prolongation manuelle de 30 jours.
 - Chaque boutique peut choisir une couleur d'interface parmi sept thèmes dans
   « Ma boutique » ; son choix est enregistré avec les paramètres de boutique.
+- L'application web est installable comme PWA. Après une première connexion en
+  ligne, les dernières données chargées restent consultables hors connexion et
+  les nouveaux dépôts sont conservés sur l'appareil puis synchronisés au retour
+  du réseau. Les autres modifications nécessitent Internet. Pour rouvrir
+  l'application hors ligne après fermeture du navigateur, cochez « Rester
+  connecté ». Les données hors ligne contiennent des informations clients :
+  utilisez cette fonction uniquement sur un appareil de confiance.
 - `WEB_ORIGIN` et `PORT` : utilisés par le serveur API autonome local.
 
 Ne jamais versionner `.env` ou d'autres secrets. Utiliser `npm ci` pour une

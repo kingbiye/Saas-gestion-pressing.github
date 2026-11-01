@@ -1,0 +1,18 @@
+{
+  "name": "Pressing OS",
+  "short_name": "Pressing OS",
+  "description": "Gestion de pressing et suivi des dépôts",
+  "lang": "fr",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f8f5",
+  "theme_color": "#176b4b",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

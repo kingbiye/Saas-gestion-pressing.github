@@ -30,6 +30,7 @@ const maxLogoBytes = 1_048_576;
 const shopColorThemes = new Set(["forest", "ocean", "royal", "plum", "terracotta", "sunrise", "slate"]);
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 const trialDays = Number(process.env.TRIAL_DAYS ?? 10);
+const manualRenewalDays = 30;
 const maxLoginAttempts = 5;
 const attemptWindowMs = 15 * 60 * 1000;
 const developmentAuthSecret = randomBytes(32).toString("hex");
@@ -291,6 +292,8 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
         name: true,
         plan: true,
         isActive: true,
+        trialEndsAt: true,
+        subscriptionEndsAt: true,
         createdAt: true,
         _count: { select: { users: true, deposits: true } },
       },
@@ -298,6 +301,15 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
     }));
   }
   const tenantMatch = url.pathname.match(/^\/admin\/tenants\/([^/]+)$/);
+  if (tenantMatch && req.method === "POST") {
+    if (!isPlatformAdmin(req)) return json(res, 403, { error: "PLATFORM_ADMIN_REQUIRED" });
+    const subscriptionEndsAt = new Date(Date.now() + manualRenewalDays * 86400000);
+    return json(res, 200, await prisma.tenant.update({
+      where: { id: tenantMatch[1] },
+      data: { isActive: true, plan: "MONTHLY", subscriptionEndsAt },
+      select: { id: true, name: true, plan: true, isActive: true, trialEndsAt: true, subscriptionEndsAt: true, createdAt: true },
+    }));
+  }
   if (tenantMatch && req.method === "PATCH") {
     if (!isPlatformAdmin(req)) return json(res, 403, { error: "PLATFORM_ADMIN_REQUIRED" });
     const input = await body(req);
@@ -408,6 +420,13 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
     const input = await body(req);
     const customerName = String(input.customerName ?? "").trim();
     if (!customerName) return json(res, 400, { error: "CUSTOMER_REQUIRED" });
+    const reference = typeof input.reference === "string" ? input.reference : null;
+    if (reference?.startsWith("PWA-")) {
+      const existing = await prisma.deposit.findFirst({
+        where: { tenantId: current.tenant.id, reference },
+      });
+      if (existing) return json(res, 200, existing);
+    }
     const serviceId = typeof input.serviceId === "string" ? input.serviceId : null;
     const service = serviceId
       ? await prisma.service.findFirst({ where: { id: serviceId, tenantId: current.tenant.id } })
@@ -420,7 +439,7 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
     }
     const deposit = await prisma.deposit.create({
       data: {
-        reference: String(input.reference ?? randomUUID().slice(0, 8)),
+        reference: reference ?? randomUUID().slice(0, 8),
         customerName,
         customerPhone: input.customerPhone ? String(input.customerPhone).trim() : undefined,
         priceCents,
