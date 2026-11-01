@@ -189,7 +189,10 @@ td small { display: block; margin-top: 3px; color: #87938b; font-size: 10px; }
 .trial-note { padding: 12px; border-radius: 9px; color: #58703b; background: #f0f6e7; font-size: 11px; line-height: 1.5; }
 .empty-state { margin: 0; padding: 32px 16px; color: var(--muted); font-size: 12px; text-align: center; }
 .page-grid { display: grid; grid-template-columns: minmax(260px, .7fr) minmax(0, 1.5fr); align-items: start; gap: 17px; }
-.form-card { position: sticky; top: 18px; }
+.form-card { position: sticky; top: 18px; max-height: calc(100vh - 36px); overflow-y: auto; scrollbar-color: var(--green) var(--green-soft); scrollbar-gutter: stable; scrollbar-width: thin; }
+.form-card::-webkit-scrollbar { width: 8px; }
+.form-card::-webkit-scrollbar-track { border-radius: 8px; background: var(--green-soft); }
+.form-card::-webkit-scrollbar-thumb { border: 2px solid var(--green-soft); border-radius: 8px; background: var(--green); }
 .optional { color: #99a49d; font-weight: 500; }
 .inline-form { display: grid; grid-template-columns: 1fr .7fr auto auto; align-items: end; gap: 12px; padding: 16px; border: 1px solid #edf0ed; border-radius: 11px; background: #fafcf9; }
 .inline-form input { min-width: 120px; }
@@ -285,12 +288,12 @@ td small { display: block; margin-top: 3px; color: #87938b; font-size: 10px; }
   .shop-logo-editor { align-items: flex-start; gap: 14px; padding: 14px; }
   .shop-logo-preview { width: 84px; height: 84px; }
   .shop-logo-actions { align-items: flex-start; flex-direction: column; }
-  .form-card { position: static; }
+  .form-card { position: static; max-height: none; overflow: visible; scrollbar-gutter: auto; }
   .service-grid { grid-template-columns: 1fr; }
   .inline-form { grid-template-columns: 1fr 1fr; padding: 12px; gap: 9px; }
   .inline-form label:first-child { grid-column: 1 / -1; }
   .payment-choice-row { grid-template-columns: 1fr; }
-  .deposit-item-editor { grid-template-columns: minmax(0, 1fr) 90px; }
+  .deposit-item-editor { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .deposit-item-editor > .button { grid-column: 1 / -1; justify-self: end; }
   .today-label { display: none; }
   .admin-topbar { min-height: 60px; gap: 9px; padding: 0 13px; }
@@ -337,7 +340,9 @@ td small { display: block; margin-top: 3px; color: #87938b; font-size: 10px; }
 .deposit-items-fieldset { display: grid; min-width: 0; gap: 12px; margin: 0; padding: 0; border: 0; }
 .deposit-items-fieldset legend { margin-bottom: 8px; color: #34433b; font-size: 12px; font-weight: 700; }
 .deposit-items-editor { display: grid; gap: 12px; }
-.deposit-item-editor { display: grid; grid-template-columns: minmax(0, 1fr) 100px auto; align-items: end; gap: 9px; padding: 12px; border: 1px solid #edf0ed; border-radius: 10px; background: #fafcf9; }
+.deposit-item-editor { display: grid; grid-template-columns: minmax(0, 1fr) 100px auto; align-items: end; gap: 12px; min-width: 0; padding: 14px; border: 1px solid #dfe8e1; border-radius: 10px; background: #f7faf7; }
+.deposit-item-editor label { min-width: 0; }
+.deposit-item-editor input, .deposit-item-editor select { box-sizing: border-box; min-width: 0; }
 .deposit-item-editor small { color: var(--muted); font-size: 10px; font-weight: 500; }
 .deposit-total-preview { display: flex; justify-content: space-between; gap: 12px; padding: 13px 14px; border-radius: 9px; color: var(--green); background: var(--green-soft); font-size: 13px; }
 .deposit-total-preview strong { color: var(--ink); font-size: 16px; }
