@@ -94,6 +94,7 @@ const STATUS_LABELS: Record<string, string> = {
   PICKED_UP: "Récupéré",
 };
 const STATUS_ORDER = ["RECEIVED", "IN_PROGRESS", "READY", "PICKED_UP"];
+const TRIAL_EXPIRED_MESSAGE = "Votre période d’essai est terminée. Vos données sont conservées. Connectez-vous avec le même compte après le renouvellement de l’accès par l’administrateur.";
 const NAV_ITEMS: { id: View; label: string; icon: string }[] = [
   { id: "overview", label: "Vue d'ensemble", icon: "⌂" },
   { id: "deposits", label: "Dépôts", icon: "▤" },
@@ -189,6 +190,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       INVALID_COLOR_THEME: "La couleur choisie n’est pas disponible. Sélectionne une des couleurs proposées.",
       PAYLOAD_TOO_LARGE: "Le fichier est trop volumineux. La taille maximale est de 1 Mo.",
       TENANT_SUSPENDED: "Cette boutique a été bloquée par l’administrateur de la plateforme.",
+      TRIAL_EXPIRED: TRIAL_EXPIRED_MESSAGE,
     };
     const message = knownErrors[apiError] || apiError || `La requête a échoué (${response.status}).`;
     throw new Error(message);
@@ -539,6 +541,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
         }
         clearToken("pressing_token");
         setAuthenticated(false);
+        if (cause instanceof Error && cause.message === TRIAL_EXPIRED_MESSAGE) setRegister(false);
         setError(cause instanceof Error ? cause.message : "Chargement de l'espace impossible.");
       })
       .finally(() => setBooting(false));
@@ -570,19 +573,26 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
           body: JSON.stringify({ email: adminEmail, password: adminPassword }),
         });
         storeToken("pressing_admin_token", result.token);
+        await refreshTenants();
         setAuthenticated(true);
         setAdminAuthenticated(true);
-        await refreshTenants();
       } else {
         const result = await request<{ token: string }>(`/auth/${register ? "register" : "login"}`, {
           method: "POST",
           body: JSON.stringify({ email, password, tenantName }),
         });
         storeToken("pressing_token", result.token);
-        setAuthenticated(true);
         await refreshBusiness();
+        setAuthenticated(true);
+        syncPendingDeposits().catch((cause: unknown) => {
+          setError(cause instanceof Error ? cause.message : "La synchronisation des dépôts en attente a échoué.");
+        });
       }
     } catch (cause) {
+      clearToken(adminPage ? "pressing_admin_token" : "pressing_token");
+      setAuthenticated(false);
+      setAdminAuthenticated(false);
+      if (cause instanceof Error && cause.message === TRIAL_EXPIRED_MESSAGE) setRegister(false);
       setError(cause instanceof Error ? cause.message : "Connexion impossible.");
     } finally {
       setLoading(false);

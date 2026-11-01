@@ -106,6 +106,10 @@ publique distincte ni configuration CORS de production n'est nécessaire.
   contacter l'administrateur de la plateforme pour renouveler leur accès.
   Depuis l'espace admin, une boutique arrivée à expiration peut être débloquée
   avec une prolongation manuelle de 30 jours.
+- L'expiration de l'essai ou de l'abonnement suspend l'accès aux données sans
+  les supprimer. Après le renouvellement, le client doit se reconnecter avec
+  le même compte pour retrouver ses dépôts, prestations et dépenses. Ne pas
+  créer une nouvelle boutique pour renouveler un accès.
 - Chaque boutique peut choisir une couleur d'interface parmi sept thèmes dans
   « Ma boutique » ; son choix est enregistré avec les paramètres de boutique.
 - L'application web est installable comme PWA. Après une première connexion en
