@@ -788,8 +788,19 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
       );
       addDetail("Date du dépôt", dateTimeLabel(receiptDeposit.createdAt));
       addDetail("Date de récupération", dateTimeLabel(receiptDeposit.pickupAt));
+      addDetail("Casier / repère", receiptDeposit.locker?.trim() || "Non renseigné");
       addDetail("Paiement", receiptDeposit.paid ? "Payé" : "Non payé");
-      addDetail("Montant", `${money(receiptDeposit.priceCents)} FCFA`);
+      y += 3;
+      pdf.setFillColor(237, 246, 240);
+      pdf.roundedRect(margin, y, contentWidth, 25, 3, 3, "F");
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(9);
+      pdf.setTextColor(23, 107, 75);
+      pdf.text("MONTANT TOTAL", margin + 5, y + 10);
+      pdf.setFontSize(18);
+      pdf.setTextColor(32, 45, 39);
+      pdf.text(`${money(receiptDeposit.priceCents)} FCFA`, pageWidth - margin - 5, y + 17, { align: "right" });
+      y += 30;
 
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(10);
@@ -1242,9 +1253,10 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
               <div><dt>Article déposé</dt><dd>{services.find((service) => service.id === receiptDeposit.serviceId)?.name ?? "Article non précisé"}</dd></div>
               <div><dt>Date du dépôt</dt><dd>{dateTimeLabel(receiptDeposit.createdAt)}</dd></div>
               <div><dt>Date de récupération</dt><dd>{dateTimeLabel(receiptDeposit.pickupAt)}</dd></div>
+              <div><dt>Casier / repère</dt><dd>{receiptDeposit.locker?.trim() || "Non renseigné"}</dd></div>
               <div><dt>Paiement</dt><dd>{receiptDeposit.paid ? "Payé" : "Non payé"}</dd></div>
-              <div><dt>Montant</dt><dd>{money(receiptDeposit.priceCents)} FCFA</dd></div>
             </dl>
+            <div className="receipt-total"><span>MONTANT TOTAL</span><strong>{money(receiptDeposit.priceCents)} FCFA</strong></div>
             <p className="receipt-thanks">Merci de votre confiance.</p>
           </article>
         </section>

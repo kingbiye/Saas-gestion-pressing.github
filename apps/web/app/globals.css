@@ -321,6 +321,9 @@ td small { display: block; margin-top: 3px; color: #87938b; font-size: 10px; }
 .receipt-details > div { display: flex; justify-content: space-between; gap: 18px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .receipt-details dt { color: var(--muted); font-size: 12px; }
 .receipt-details dd { margin: 0; font-size: 12px; font-weight: 700; text-align: right; }
+.receipt-total { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 14px; border-radius: 8px; color: #176b4b; background: #edf6f0; }
+.receipt-total span { font-size: 11px; font-weight: 700; letter-spacing: .06em; }
+.receipt-total strong { color: var(--ink); font-size: 20px; font-weight: 800; text-align: right; }
 .receipt-thanks { margin: 22px 0 0; color: var(--muted); font-size: 12px; text-align: center; }
 @media (prefers-reduced-motion: reduce) {
   .topbar-scene { animation: none; opacity: 0; }
