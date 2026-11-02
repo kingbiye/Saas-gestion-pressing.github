@@ -60,7 +60,8 @@ type AdminTenant = {
 };
 type View = "overview" | "deposits" | "catalog" | "expenses" | "reports" | "shop";
 type ShopColorTheme = "forest" | "ocean" | "royal" | "plum" | "terracotta" | "sunrise" | "slate";
-type ShopSettings = { name: string; logoDataUrl: string | null; colorTheme: ShopColorTheme };
+type ShopDesignPreset = "atelier" | "classique" | "signature";
+type ShopSettings = { name: string; logoDataUrl: string | null; colorTheme: ShopColorTheme; designPreset: ShopDesignPreset };
 type OfflineSnapshot = {
   services: Service[];
   deposits: Deposit[];
@@ -78,6 +79,11 @@ const SHOP_COLOR_THEMES: { id: ShopColorTheme; name: string; swatch: string }[] 
   { id: "terracotta", name: "Terracotta", swatch: "#a94f36" },
   { id: "sunrise", name: "Ambre", swatch: "#a66a12" },
   { id: "slate", name: "Ardoise", swatch: "#536574" },
+];
+const SHOP_DESIGN_PRESETS: { id: ShopDesignPreset; name: string; description: string }[] = [
+  { id: "atelier", name: "Atelier", description: "DM Sans & Manrope · arrondis généreux" },
+  { id: "classique", name: "Classique", description: "Arial & Georgia · angles droits" },
+  { id: "signature", name: "Signature", description: "Manrope · courbes équilibrées" },
 ];
 const PRESSING_SCENES = [
   "/pressing-scenes/machines.jpg",
@@ -305,10 +311,11 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [report, setReport] = useState<Report | null>(null);
   const [billing, setBilling] = useState<Billing | null>(null);
-  const [shop, setShop] = useState<ShopSettings>({ name: "", logoDataUrl: null, colorTheme: "forest" });
+  const [shop, setShop] = useState<ShopSettings>({ name: "", logoDataUrl: null, colorTheme: "forest", designPreset: "atelier" });
   const shopSettingsRevision = useRef(0);
   const shopSettingsWrites = useRef(0);
   const preferredShopTheme = useRef<ShopColorTheme | null>(null);
+  const preferredShopDesignPreset = useRef<ShopDesignPreset | null>(null);
   const depositSyncInProgress = useRef(false);
   const [tenants, setTenants] = useState<AdminTenant[]>([]);
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
@@ -335,9 +342,11 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
     ]);
     setBilling(billingStatus);
     if (shopRevisionAtStart === shopSettingsRevision.current && shopSettingsWrites.current === 0) {
-      setShop(preferredShopTheme.current
-        ? { ...shopSettings, colorTheme: preferredShopTheme.current }
-        : shopSettings);
+      setShop({
+        ...shopSettings,
+        ...(preferredShopTheme.current ? { colorTheme: preferredShopTheme.current } : {}),
+        ...(preferredShopDesignPreset.current ? { designPreset: preferredShopDesignPreset.current } : {}),
+      });
     }
     if (!billingStatus.active) {
       setServices([]);
@@ -409,7 +418,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
     }
     const pending = await getPendingDeposits<Deposit>(userKey);
     setBilling(snapshot.billing);
-    setShop(snapshot.shop);
+    setShop({ ...snapshot.shop, designPreset: snapshot.shop.designPreset ?? "atelier" });
     setServices(snapshot.services);
     setDeposits(mergePendingDeposits(snapshot.deposits, pending));
     setExpenses(snapshot.expenses);
@@ -701,6 +710,39 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
         const themeName = SHOP_COLOR_THEMES.find((theme) => theme.id === colorTheme)?.name ?? colorTheme;
         setMessage(`La couleur « ${themeName} » a été appliquée.`);
       } finally {
+        shopSettingsWrites.current -= 1;
+        shopSettingsRevision.current += 1;
+      }
+    });
+  }
+
+  async function updateShopDesignPreset(designPreset: ShopDesignPreset) {
+    if (shopSettingsWrites.current > 0) return;
+    const previousPreset = shop.designPreset;
+    let saved = false;
+    shopSettingsWrites.current += 1;
+    shopSettingsRevision.current += 1;
+    preferredShopDesignPreset.current = designPreset;
+    setShop((currentShop) => ({ ...currentShop, designPreset }));
+    await runAction(async () => {
+      try {
+        const updatedShop = await request<ShopSettings>("/settings/shop", {
+          method: "PATCH",
+          body: JSON.stringify({ designPreset }),
+        });
+        if (updatedShop.designPreset !== designPreset) {
+          throw new Error("Le serveur n’a pas confirmé l’enregistrement de ce style. Réessaie.");
+        }
+        setShop((currentShop) => ({
+          ...updatedShop,
+          designPreset: preferredShopDesignPreset.current ?? designPreset,
+        }));
+        saved = true;
+        const presetName = SHOP_DESIGN_PRESETS.find((preset) => preset.id === designPreset)?.name ?? designPreset;
+        setMessage(`Le style « ${presetName} » a été appliqué.`);
+      } finally {
+        preferredShopDesignPreset.current = null;
+        if (!saved) setShop((currentShop) => ({ ...currentShop, designPreset: previousPreset }));
         shopSettingsWrites.current -= 1;
         shopSettingsRevision.current += 1;
       }
@@ -1121,7 +1163,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   const shopInitial = (shop.name || email || "P").charAt(0).toUpperCase();
 
   return (
-    <main className="app-shell" data-color-theme={shop.colorTheme}>
+    <main className="app-shell" data-color-theme={shop.colorTheme} data-design-preset={shop.designPreset}>
       <aside className="sidebar">
         <a
           className="brand brand-light"
@@ -1363,7 +1405,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
 
           {view === "shop" && <section className="content-card shop-settings-card">
             <div className="section-title"><div><p className="eyebrow">IDENTITÉ DE VOTRE BOUTIQUE</p><h2>Personnaliser l’apparence</h2></div></div>
-            <p className="muted">Choisissez l’une des sept couleurs professionnelles. Elle sera enregistrée pour votre boutique.</p>
+            <p className="muted">Choisissez une couleur et un style visuel enregistrés pour votre boutique.</p>
             <fieldset className="theme-picker">
               <legend>Couleur de l’interface</legend>
               {SHOP_COLOR_THEMES.map((theme) => (
@@ -1378,6 +1420,26 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
                   />
                   <span className="theme-swatch" style={{ backgroundColor: theme.swatch }} />
                   <span>{theme.name}</span>
+                </label>
+              ))}
+            </fieldset>
+            <fieldset className="design-style-picker">
+              <legend>Police et forme des cartes</legend>
+              {SHOP_DESIGN_PRESETS.map((preset) => (
+                <label className={`design-style-choice ${shop.designPreset === preset.id ? "design-style-choice-selected" : ""}`} key={preset.id}>
+                  <input
+                    type="radio"
+                    name="shop-design-preset"
+                    value={preset.id}
+                    checked={shop.designPreset === preset.id}
+                    disabled={loading || !isOnline}
+                    onChange={() => void updateShopDesignPreset(preset.id)}
+                  />
+                  <span className="design-style-preview" data-design-preset={preset.id} aria-hidden="true">
+                    <span>Aa</span>
+                    <span />
+                  </span>
+                  <span className="design-style-copy"><strong>{preset.name}</strong><small>{preset.description}</small></span>
                 </label>
               ))}
             </fieldset>

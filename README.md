@@ -51,7 +51,7 @@ workspaces. La CI GitHub exécute aussi cette vérification.
 - `GET|POST /api/deposits`, `PATCH /api/deposits/:id`
 - `GET|POST /api/expenses`
 - `GET /api/reports/monthly`
-- `GET|PATCH /api/settings/shop` (logo PNG, JPEG ou WebP, 1 Mo maximum)
+- `GET|PATCH /api/settings/shop` (logo, couleur, police et forme des cartes)
 - `GET /api/billing/status`
 - `GET /api/health`
 
@@ -81,9 +81,9 @@ utiliser les routes métier.
    Supabase et administrateur doivent rester dans les variables Vercel, jamais
    dans une variable `NEXT_PUBLIC_*` ni dans Git.
 7. Appliquer le schéma à la base depuis un environnement de confiance avant de
-   déployer une version qui utilise de nouvelles tables. Les lignes d'articles
+   déployer une version qui ajoute ou modifie des données. Les lignes d'articles
    des dépôts sont ajoutées sans supprimer les dépôts existants ; le logo reste
-   nullable et le thème de couleur reçoit une valeur par défaut :
+   nullable, et les thèmes de couleur et de design ont une valeur par défaut :
 
    ```bash
    npm run db:push

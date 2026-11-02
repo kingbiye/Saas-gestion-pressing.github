@@ -28,6 +28,7 @@ if (process.env.NODE_ENV !== "production") globalForPrisma.pressingPrisma = pris
 const maxRequestBytes = 1_500_000;
 const maxLogoBytes = 1_048_576;
 const shopColorThemes = new Set(["forest", "ocean", "royal", "plum", "terracotta", "sunrise", "slate"]);
+const shopDesignPresets = new Set(["atelier", "classique", "signature"]);
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 const trialDays = Number(process.env.TRIAL_DAYS ?? 10);
 const manualRenewalDays = 30;
@@ -333,7 +334,7 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
   if (url.pathname === "/settings/shop" && req.method === "GET") {
     const shop = await prisma.tenant.findUnique({
       where: { id: current.tenant.id },
-      select: { name: true, logoDataUrl: true, colorTheme: true },
+      select: { name: true, logoDataUrl: true, colorTheme: true, designPreset: true },
     });
     if (!shop) return json(res, 404, { error: "SHOP_NOT_FOUND" });
     return json(res, 200, shop);
@@ -342,13 +343,17 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
     const input = await body(req);
     const logoInput = input.logoDataUrl;
     const themeInput = input.colorTheme;
+    const designPresetInput = input.designPreset;
     if (logoInput !== undefined && logoInput !== null && typeof logoInput !== "string") {
       return json(res, 400, { error: "INVALID_LOGO" });
     }
     if (themeInput !== undefined && (typeof themeInput !== "string" || !shopColorThemes.has(themeInput))) {
       return json(res, 400, { error: "INVALID_COLOR_THEME" });
     }
-    if (logoInput === undefined && themeInput === undefined) {
+    if (designPresetInput !== undefined && (typeof designPresetInput !== "string" || !shopDesignPresets.has(designPresetInput))) {
+      return json(res, 400, { error: "INVALID_DESIGN_PRESET" });
+    }
+    if (logoInput === undefined && themeInput === undefined && designPresetInput === undefined) {
       return json(res, 400, { error: "INVALID_SHOP_SETTINGS" });
     }
     let logoDataUrl: string | null | undefined =
@@ -369,10 +374,11 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
     const data: Prisma.TenantUpdateInput = {};
     if (logoInput !== undefined) data.logoDataUrl = logoDataUrl;
     if (typeof themeInput === "string") data.colorTheme = themeInput;
+    if (typeof designPresetInput === "string") data.designPreset = designPresetInput;
     const tenant = await prisma.tenant.update({
       where: { id: current.tenant.id },
       data,
-      select: { name: true, logoDataUrl: true, colorTheme: true },
+      select: { name: true, logoDataUrl: true, colorTheme: true, designPreset: true },
     });
     return json(res, 200, tenant);
   }

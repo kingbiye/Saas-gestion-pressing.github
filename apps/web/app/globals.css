@@ -82,7 +82,10 @@ strong, h1, h2, h3 { font-family: Manrope, "DM Sans", Arial, sans-serif; }
 .offline-banner { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0 0 18px; padding: 11px 14px; border: 1px solid #f0d5a7; border-radius: 10px; color: #765016; background: #fff8e9; font-size: 13px; line-height: 1.5; }
 .offline-banner-online { border-color: #d1e8d8; color: #236644; background: var(--green-soft); }
 
-.app-shell { --shop-sidebar: #173c30; display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100vh; background: var(--canvas); }
+.app-shell { --shop-sidebar: #173c30; --shop-font-body: "DM Sans", Arial, sans-serif; --shop-font-heading: Manrope, "DM Sans", Arial, sans-serif; --shop-card-radius: 14px; --shop-stat-radius: 18px; display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100vh; background: var(--canvas); font-family: var(--shop-font-body); }
+.app-shell[data-design-preset="classique"] { --shop-font-body: Arial, sans-serif; --shop-font-heading: Georgia, "Times New Roman", serif; --shop-card-radius: 3px; --shop-stat-radius: 3px; }
+.app-shell[data-design-preset="signature"] { --shop-font-body: Manrope, "DM Sans", Arial, sans-serif; --shop-font-heading: Manrope, "DM Sans", Arial, sans-serif; --shop-card-radius: 20px; --shop-stat-radius: 9px; }
+.app-shell strong, .app-shell h1, .app-shell h2, .app-shell h3 { font-family: var(--shop-font-heading); }
 .app-shell[data-color-theme="ocean"] { --green: #146a8a; --green-dark: #0e4c66; --green-soft: #e6f3f7; --lime: #b8e5f1; --shop-sidebar: #123e4d; --canvas: #f1f8fa; --paper: #fdfeff; --line: #dcebef; }
 .app-shell[data-color-theme="royal"] { --green: #4057a6; --green-dark: #2e3f7d; --green-soft: #edf0fb; --lime: #c7d0fa; --shop-sidebar: #29375f; --canvas: #f4f5fb; --paper: #fff; --line: #e2e5f1; }
 .app-shell[data-color-theme="plum"] { --green: #784a83; --green-dark: #593763; --green-soft: #f4edf6; --lime: #e3c7eb; --shop-sidebar: #49344f; --canvas: #f8f4f9; --paper: #fff; --line: #ece2ef; }
@@ -128,7 +131,7 @@ strong, h1, h2, h3 { font-family: Manrope, "DM Sans", Arial, sans-serif; }
 .page-heading h1 { margin: 0; font-size: clamp(27px, 3vw, 35px); letter-spacing: -1.3px; }
 .page-heading > .muted { margin: 8px 0 0; font-size: 13px; }
 .stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
-.stat-card { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: 18px; background: var(--paper); box-shadow: 0 3px 14px rgba(35,57,44,.025); }
+.stat-card { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: var(--shop-stat-radius); background: var(--paper); box-shadow: 0 3px 14px rgba(35,57,44,.025); }
 .stat-card > p { margin: 0; color: var(--muted); font-size: 11px; font-weight: 600; }
 .stat-card > strong { display: block; overflow: hidden; margin: 13px 0 6px; font-size: clamp(19px, 2vw, 26px); letter-spacing: -.8px; text-overflow: ellipsis; white-space: nowrap; }
 .stat-card > span { color: var(--muted); font-size: 10px; text-transform: capitalize; }
@@ -145,7 +148,7 @@ strong, h1, h2, h3 { font-family: Manrope, "DM Sans", Arial, sans-serif; }
 .settings-contact-icon svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 .settings-contact-whatsapp { color: #18764a; }
 .settings-contact-whatsapp:hover { border-color: #b8d7c3; background: #f1f8f3; }
-.content-card { min-width: 0; padding: 21px; border: 1px solid var(--line); border-radius: 4px; background: var(--paper); box-shadow: 0 3px 14px rgba(35,57,44,.025); }
+.content-card { min-width: 0; padding: 21px; border: 1px solid var(--line); border-radius: var(--shop-card-radius); background: var(--paper); box-shadow: 0 3px 14px rgba(35,57,44,.025); }
 .section-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 17px; }
 .section-title h2 { margin: 0; font-size: 17px; letter-spacing: -.4px; }
 .section-title .eyebrow { margin-bottom: 5px; }
@@ -223,6 +226,23 @@ td small { display: block; margin-top: 3px; color: #87938b; font-size: 10px; }
 .theme-choice input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 .theme-choice input:focus-visible + .theme-swatch { outline: 3px solid var(--green-soft); outline-offset: 2px; }
 .theme-swatch { width: 24px; height: 24px; flex: 0 0 auto; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 0 1px rgba(28,40,36,.15); }
+.design-style-picker { display: grid; gap: 10px; margin: 24px 0 0; padding: 0; border: 0; }
+.design-style-picker legend { margin-bottom: 2px; color: var(--ink); font-size: 12px; font-weight: 700; }
+.design-style-choice { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: white; cursor: pointer; transition: border-color .15s ease, background .15s ease, box-shadow .15s ease; }
+.design-style-choice:hover { border-color: var(--green); }
+.design-style-choice-selected { border-color: var(--green); background: var(--green-soft); box-shadow: 0 0 0 1px var(--green); }
+.design-style-choice input { width: 16px; height: 16px; flex: 0 0 auto; accent-color: var(--green); }
+.design-style-preview { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; width: 66px; height: 44px; flex: 0 0 auto; }
+.design-style-preview > span { display: grid; place-items: center; border: 1px solid #cbd8cf; background: white; color: var(--green); font-size: 11px; font-weight: 700; }
+.design-style-preview > span:first-child { grid-column: 1 / -1; }
+.design-style-preview[data-design-preset="atelier"] > span { border-radius: 8px; }
+.design-style-preview[data-design-preset="classique"] > span { border-radius: 0; }
+.design-style-preview[data-design-preset="signature"] > span { border-radius: 13px 4px; }
+.design-style-preview[data-design-preset="classique"] { font-family: Georgia, "Times New Roman", serif; }
+.design-style-preview[data-design-preset="signature"] { font-family: Manrope, sans-serif; }
+.design-style-copy { display: grid; min-width: 0; gap: 3px; }
+.design-style-copy strong { font-size: 12px; }
+.design-style-copy small { color: var(--muted); font-size: 11px; line-height: 1.4; }
 .month-picker { display: grid; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 700; }
 .month-picker input { min-height: 37px; }
 .report-month { margin: 22px 0 15px; font-size: 19px; text-transform: capitalize; }
