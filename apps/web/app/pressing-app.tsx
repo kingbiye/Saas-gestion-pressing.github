@@ -1340,19 +1340,25 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
               {" "}Contactez l’administrateur pour renouveler l’accès ou obtenir de l’aide.
             </p>}
             <div className="subscription-actions settings-contact-actions">
-              <a className="button button-primary" href="mailto:pressinggestion9@gmail.com?subject=Renouvellement%20Pressing%20OS">
-                Envoyer un e-mail
+              <a
+                className="button button-primary settings-contact-icon"
+                href="mailto:pressinggestion9@gmail.com?subject=Renouvellement%20Pressing%20OS"
+                aria-label="Envoyer un e-mail à l’administrateur"
+                title="Envoyer un e-mail"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m4 7 8 6 8-6" /></svg>
               </a>
               <a
-                className="button button-secondary"
+                className="button button-secondary settings-contact-icon settings-contact-whatsapp"
                 href="https://wa.me/242065334385?text=Bonjour%2C%20je%20souhaite%20contacter%20l%E2%80%99administrateur%20de%20Pressing%20OS."
                 target="_blank"
                 rel="noreferrer"
+                aria-label="Contacter l’administrateur sur WhatsApp"
+                title="WhatsApp"
               >
-                WhatsApp
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5a8.4 8.4 0 0 1-12.4 7.4L3 20l1.2-4.4A8.4 8.4 0 1 1 20 11.5Z" /><path d="M8.2 8.2c.2-.5.5-.5.8-.5h.5c.2 0 .4.1.5.4l.7 1.7c.1.2.1.4-.1.6l-.5.6c-.2.2-.2.4 0 .6.5.8 1.2 1.5 2 2 .2.1.4.1.6-.1l.7-.8c.2-.2.4-.2.6-.1l1.6.8c.2.1.4.3.4.5 0 .3-.2 1-.7 1.4-.5.4-1.1.6-1.7.5-1-.1-2.2-.7-3.5-1.8-1.2-1-2-2.3-2.3-3.3-.3-1 .2-2.1.4-2.5Z" /></svg>
               </a>
             </div>
-            <a className="settings-contact-email" href="mailto:pressinggestion9@gmail.com">pressinggestion9@gmail.com</a>
           </section>}
 
           {view === "shop" && <section className="content-card shop-settings-card">
