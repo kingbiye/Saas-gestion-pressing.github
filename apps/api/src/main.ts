@@ -75,13 +75,13 @@ function getAuthSecret(): string {
   return developmentAuthSecret;
 }
 
-function signToken(userId: string, role = "USER"): string {
-  const payload = Buffer.from(JSON.stringify({ sub: userId, role, exp: Date.now() + 7 * 86400000 })).toString("base64url");
+function signToken(userId: string, role = "USER", sessionVersion = 0): string {
+  const payload = Buffer.from(JSON.stringify({ sub: userId, role, sessionVersion, exp: Date.now() + 7 * 86400000 })).toString("base64url");
   const signature = createHmac("sha256", getAuthSecret()).update(payload).digest("base64url");
   return `${payload}.${signature}`;
 }
 
-function verifyToken(token: string): { sub: string; role: string } | null {
+function verifyToken(token: string): { sub: string; role: string; sessionVersion: number } | null {
   const [payload, signature] = token.split(".");
   if (!payload || !signature) return null;
   const expected = createHmac("sha256", getAuthSecret()).update(payload).digest("base64url");
@@ -89,9 +89,12 @@ function verifyToken(token: string): { sub: string; role: string } | null {
   const expectedBuffer = Buffer.from(expected);
   if (actualBuffer.length !== expectedBuffer.length || !timingSafeEqual(actualBuffer, expectedBuffer)) return null;
   try {
-    const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as { sub?: unknown; role?: unknown; exp?: unknown };
-    return typeof data.sub === "string" && typeof data.role === "string" && typeof data.exp === "number" && data.exp > Date.now()
-      ? { sub: data.sub, role: data.role }
+    const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as { sub?: unknown; role?: unknown; sessionVersion?: unknown; exp?: unknown };
+    const sessionVersion = data.sessionVersion ?? 0;
+    return typeof data.sub === "string" && typeof data.role === "string"
+      && typeof sessionVersion === "number" && Number.isSafeInteger(sessionVersion) && sessionVersion >= 0
+      && typeof data.exp === "number" && data.exp > Date.now()
+      ? { sub: data.sub, role: data.role, sessionVersion }
       : null;
   } catch {
     return null;
@@ -135,7 +138,7 @@ async function session(req: ApiRequest, res: ApiResponse, allowExpired = false) 
   const rawAuthorization = req.headers.authorization;
   const rawToken = (Array.isArray(rawAuthorization) ? rawAuthorization[0] : rawAuthorization)?.replace(/^Bearer\s+/i, "");
   const token = rawToken ? verifyToken(rawToken) : null;
-  const user = token?.role !== "PLATFORM_ADMIN" && token?.sub
+  const user = token && token.role !== "PLATFORM_ADMIN" && token.sub
     ? await prisma.user.findUnique({
       where: { id: token.sub },
       include: {
@@ -146,7 +149,7 @@ async function session(req: ApiRequest, res: ApiResponse, allowExpired = false) 
     })
     : null;
   const tenant = user?.tenant;
-  if (!user || !tenant) {
+  if (!user || !tenant || user.sessionVersion !== token?.sessionVersion) {
     json(res, 401, { error: "UNAUTHORIZED" });
     return null;
   }
@@ -221,7 +224,7 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
       include: { users: true },
     });
     const user = tenant.users[0];
-    return json(res, 201, { token: signToken(user.id), user: { id: user.id, email, role: user.role }, tenant });
+    return json(res, 201, { token: signToken(user.id, "USER", user.sessionVersion), user: { id: user.id, email, role: user.role }, tenant });
   }
 
   if (req.method === "POST" && url.pathname === "/auth/login") {
@@ -234,7 +237,7 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
       return json(res, 401, { error: "INVALID_CREDENTIALS" });
     }
     loginAttempts.delete(email);
-    return json(res, 200, { token: signToken(user.id), user: { id: user.id, email, role: user.role } });
+    return json(res, 200, { token: signToken(user.id, "USER", user.sessionVersion), user: { id: user.id, email, role: user.role } });
   }
 
   if (req.method === "POST" && url.pathname === "/auth/forgot-password") {
@@ -269,7 +272,10 @@ export async function handleRequest(req: ApiRequest, res: ApiResponse) {
       return json(res, 400, { error: "RESET_TOKEN_INVALID_OR_EXPIRED" });
     }
     await prisma.$transaction([
-      prisma.user.update({ where: { id: resetToken.userId }, data: { password: hashPassword(password) } }),
+      prisma.user.update({
+        where: { id: resetToken.userId },
+        data: { password: hashPassword(password), sessionVersion: { increment: 1 } },
+      }),
       prisma.passwordResetToken.update({ where: { id: resetToken.id }, data: { usedAt: new Date() } }),
     ]);
     return json(res, 200, { message: "Mot de passe réinitialisé. Vous pouvez vous connecter." });

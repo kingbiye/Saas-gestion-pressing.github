@@ -57,7 +57,8 @@ workspaces. La CI GitHub exécute aussi cette vérification.
 
 Les routes métier nécessitent un jeton Bearer. Les données sont isolées par
 tenant. Les comptes suspendus ou dont l'essai est terminé ne peuvent plus
-utiliser les routes métier.
+utiliser les routes métier. La réinitialisation d'un mot de passe invalide les
+sessions déjà ouvertes du compte concerné.
 
 ## Déploiement Vercel et Supabase
 
