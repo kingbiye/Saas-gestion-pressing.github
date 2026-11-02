@@ -1343,9 +1343,6 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
               <a className="button button-primary" href="mailto:pressinggestion9@gmail.com?subject=Renouvellement%20Pressing%20OS">
                 Envoyer un e-mail
               </a>
-              <a className="button button-secondary" href="tel:+242065334385">
-                Appeler le +242 06 533 43 85
-              </a>
               <a
                 className="button button-secondary"
                 href="https://wa.me/242065334385?text=Bonjour%2C%20je%20souhaite%20contacter%20l%E2%80%99administrateur%20de%20Pressing%20OS."
