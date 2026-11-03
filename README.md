@@ -1,7 +1,8 @@
 # Pressing SaaS
 
 Application de gestion multi-tenant pour pressing, avec inscription, catalogue,
-dépôts, dépenses, rapports mensuels et administration de la plateforme.
+dépôts avec rappels internes deux heures avant le retrait, dépenses, rapports
+mensuels et administration de la plateforme.
 
 ## Architecture
 
@@ -16,6 +17,11 @@ dépôts, dépenses, rapports mensuels et administration de la plateforme.
 - Supabase héberge PostgreSQL ; Vercel héberge l'application web et son API.
 - `/` : connexion et espace des professionnels du pressing.
 - `/admin` : connexion et tableau de bord de l'administration plateforme.
+
+Les rappels de retrait sont affichés dans le suivi des dépôts lorsque l'heure
+prévue approche (dans les deux heures). Ils restent visibles jusqu'au retrait
+du dépôt et nécessitent que l'espace professionnel soit ouvert ; aucun SMS ou
+message WhatsApp n'est envoyé.
 
 ## Développement local
 

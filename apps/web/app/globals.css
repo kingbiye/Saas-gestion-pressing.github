@@ -160,6 +160,18 @@ td { padding: 12px; border-bottom: 1px solid #edf0ed; color: #4d5b53; font-size:
 tbody tr:last-child td { border-bottom: 0; }
 td strong { display: block; color: var(--ink); font-size: 12px; }
 td small { display: block; margin-top: 3px; color: #87938b; font-size: 10px; }
+.pickup-reminder { margin: 0 0 16px; padding: 14px 16px; border: 1px solid #efdfb9; border-left: 4px solid #c78d2b; border-radius: var(--shop-card-radius); background: #fffbf1; }
+.pickup-reminder-heading { display: flex; align-items: center; gap: 10px; color: #74551e; }
+.pickup-reminder-icon { display: grid; flex: 0 0 auto; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: #f7edcf; font-size: 21px; }
+.pickup-reminder-heading > div { display: grid; gap: 3px; }
+.pickup-reminder-heading strong { font-size: 13px; }
+.pickup-reminder-heading small, .pickup-reminder li small { color: #8d7a55; font-size: 10px; }
+.pickup-reminder ul { display: grid; gap: 6px; margin: 12px 0 0 44px; padding: 0; list-style: none; }
+.pickup-reminder li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-top: 7px; border-top: 1px solid #f1e7d0; font-size: 11px; }
+.pickup-reminder li > div { display: grid; gap: 2px; min-width: 0; }
+.pickup-reminder li > div > strong { overflow: hidden; color: var(--ink); text-overflow: ellipsis; }
+.pickup-reminder li > span { flex: 0 0 auto; color: #73541d; font-weight: 700; text-align: right; }
+.pickup-reminder li > .pickup-reminder-overdue { color: #a63f30; }
 .status { display: inline-flex; align-items: center; padding: 5px 8px; border-radius: 20px; color: #7a6724; background: #f8f3de; font-size: 10px; font-weight: 700; white-space: nowrap; }
 .status-in_progress { color: #536a82; background: #eaf1f7; }
 .status-ready { color: #216c48; background: #e5f3e9; }
@@ -303,6 +315,9 @@ td small { display: block; margin-top: 3px; color: #87938b; font-size: 10px; }
   .overview-grid, .page-grid { grid-template-columns: 1fr; gap: 12px; }
   .subscription-actions { justify-content: flex-start; }
   .content-card { padding: 16px; }
+  .pickup-reminder { padding: 12px; }
+  .pickup-reminder ul { margin-left: 0; }
+  .pickup-reminder li { align-items: flex-start; }
   .shop-logo-editor { align-items: flex-start; gap: 14px; padding: 14px; }
   .shop-logo-preview { width: 84px; height: 84px; }
   .shop-logo-actions { align-items: flex-start; flex-direction: column; }

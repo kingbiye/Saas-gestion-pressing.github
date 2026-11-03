@@ -124,6 +124,17 @@ function dateTimeLabel(date: string | null | undefined) {
   return new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short" }).format(new Date(date));
 }
 
+function pickupReminderLabel(pickupAt: string, now: number) {
+  const difference = new Date(pickupAt).getTime() - now;
+  const totalMinutes = Math.ceil(Math.abs(difference) / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const duration = [hours ? `${hours} h` : "", minutes ? `${minutes} min` : ""].filter(Boolean).join(" ");
+  return difference > 0
+    ? `Retrait dans ${duration || "moins d’une minute"}`
+    : `Retrait dépassé de ${duration || "moins d’une minute"}`;
+}
+
 function depositItemSummary(deposit: Deposit) {
   if (deposit.items?.length) {
     return deposit.items.map((item) => `${item.serviceName} × ${item.quantity}`).join(" · ");
@@ -332,6 +343,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   const [receiptDeposit, setReceiptDeposit] = useState<Deposit | null>(null);
   const [expenseLabel, setExpenseLabel] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
+  const [clockNow, setClockNow] = useState(0);
 
   const refreshBusiness = useCallback(async (selectedMonth = month) => {
     const shopRevisionAtStart = shopSettingsRevision.current;
@@ -507,6 +519,13 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   }, [adminPage, authenticated, syncPendingDeposits]);
 
   useEffect(() => {
+    if (adminPage || !authenticated || view !== "deposits") return;
+    setClockNow(Date.now());
+    const timer = window.setInterval(() => setClockNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, [adminPage, authenticated, view]);
+
+  useEffect(() => {
     if (adminPage) {
       if (!readToken("pressing_admin_token")) {
         setBooting(false);
@@ -558,6 +577,15 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
 
   const openDeposits = deposits.filter((deposit) => deposit.status !== "PICKED_UP").length;
   const readyDeposits = deposits.filter((deposit) => deposit.status === "READY").length;
+  const pickupReminders = deposits
+    .flatMap((deposit) => {
+      if (!clockNow || !deposit.pickupAt || deposit.status === "PICKED_UP") return [];
+      const pickupAt = deposit.pickupAt;
+      const pickupTime = new Date(pickupAt).getTime();
+      if (!Number.isFinite(pickupTime) || pickupTime > clockNow + 2 * 60 * 60 * 1000) return [];
+      return [{ deposit, pickupAt, pickupTime }];
+    })
+    .sort((first, second) => first.pickupTime - second.pickupTime);
   const draftTotalCents = depositLines.reduce((total, line) => {
     const service = services.find((item) => item.id === line.serviceId);
     const quantity = Number(line.quantity);
@@ -1334,6 +1362,22 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
             </section>
             <section className="content-card">
               <div className="section-title"><div><p className="eyebrow">ATELIER</p><h2>Tous les dépôts</h2></div><span className="count-pill">{deposits.length}</span></div>
+              {pickupReminders.length > 0 && <aside className="pickup-reminder" role="status" aria-live="polite">
+                <div className="pickup-reminder-heading">
+                  <span className="pickup-reminder-icon" aria-hidden="true">◷</span>
+                  <div><strong>Rappels de retrait</strong><small>À partir de 2 h avant l’heure prévue · {pickupReminders.length} client(s)</small></div>
+                </div>
+                <ul>
+                  {pickupReminders.map(({ deposit, pickupAt, pickupTime }) => (
+                    <li key={deposit.id}>
+                      <div><strong>{deposit.customerName}</strong>{depositItemSummary(deposit) && <small>{depositItemSummary(deposit)}</small>}</div>
+                      <span className={pickupTime <= clockNow ? "pickup-reminder-overdue" : ""}>
+                        {pickupReminderLabel(pickupAt, clockNow)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </aside>}
               {deposits.length ? <div className="table-wrap"><table><thead><tr><th>Client</th><th>Téléphone</th><th>État</th><th>Casier / repère</th><th>Montant</th><th>Paiement</th><th>Action</th></tr></thead><tbody>{deposits.map((deposit) => <DepositRow key={deposit.id} deposit={deposit} onAdvance={(item) => updateDeposit(item, { status: STATUS_ORDER[STATUS_ORDER.indexOf(item.status) + 1] })} onPaymentChange={(item, isPaid) => updateDeposit(item, { paid: isPaid })} onCancelPending={(item) => void cancelPendingDeposit(item)} onPrintReceipt={setReceiptDeposit} />)}</tbody></table></div> : <p className="empty-state">Aucun dépôt pour le moment. Enregistrez la première commande.</p>}
             </section>
           </div>}
