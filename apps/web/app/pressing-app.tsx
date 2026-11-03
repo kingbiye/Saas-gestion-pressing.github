@@ -247,7 +247,6 @@ function DepositRow({ deposit, onAdvance, onPaymentChange, onCancelPending, onPr
     <tr>
       <td>
         <strong>{deposit.customerName}</strong>
-        <small>#{deposit.reference}</small>
         {depositItemSummary(deposit) && <small>{depositItemSummary(deposit)}</small>}
       </td>
       <td>{deposit.customerPhone || "—"}</td>
@@ -1234,7 +1233,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
             <div className="overview-grid">
               <section className="content-card">
                 <div className="section-title"><div><p className="eyebrow">DERNIÈRES COMMANDES</p><h2>Suivi des dépôts</h2></div><button className="text-button" onClick={() => setView("deposits")}>Voir tout →</button></div>
-                {deposits.length ? <div className="table-wrap"><table><thead><tr><th>Client</th><th>Casier / repère</th><th>État</th><th>Montant</th><th>Paiement</th></tr></thead><tbody>{deposits.slice(0, 5).map((deposit) => <tr key={deposit.id}><td><strong>{deposit.customerName}</strong><small>#{deposit.reference}</small></td><td><strong>{deposit.locker?.trim() || "—"}</strong></td><td>{deposit.syncState === "pending" ? <span className="status status-received">À synchroniser</span> : <span className={`status status-${deposit.status.toLowerCase()}`}>{STATUS_LABELS[deposit.status] ?? deposit.status}</span>}</td><td>{money(deposit.priceCents)} FCFA</td><td>{deposit.paid ? <span className="paid-label">Payé</span> : <span className="due-label">À régler</span>}</td></tr>)}</tbody></table></div> : <p className="empty-state">Vos nouveaux dépôts apparaîtront ici.</p>}
+                {deposits.length ? <div className="table-wrap"><table><thead><tr><th>Client</th><th>Casier / repère</th><th>État</th><th>Montant</th><th>Paiement</th></tr></thead><tbody>{deposits.slice(0, 5).map((deposit) => <tr key={deposit.id}><td><strong>{deposit.customerName}</strong>{depositItemSummary(deposit) && <small>{depositItemSummary(deposit)}</small>}</td><td><strong>{deposit.locker?.trim() || "—"}</strong></td><td>{deposit.syncState === "pending" ? <span className="status status-received">À synchroniser</span> : <span className={`status status-${deposit.status.toLowerCase()}`}>{STATUS_LABELS[deposit.status] ?? deposit.status}</span>}</td><td>{money(deposit.priceCents)} FCFA</td><td>{deposit.paid ? <span className="paid-label">Payé</span> : <span className="due-label">À régler</span>}</td></tr>)}</tbody></table></div> : <p className="empty-state">Vos nouveaux dépôts apparaîtront ici.</p>}
               </section>
               <section className="content-card">
                 <div className="section-title"><div><p className="eyebrow">RÉSUMÉ DU MOIS</p><h2>{monthLabel(month)}</h2></div><button className="button button-small button-secondary" onClick={() => setView("reports")}>Rapport</button></div>
