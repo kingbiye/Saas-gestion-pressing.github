@@ -585,7 +585,8 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
       if (!Number.isFinite(pickupTime) || pickupTime > clockNow + 2 * 60 * 60 * 1000) return [];
       return [{ deposit, pickupAt, pickupTime }];
     })
-    .sort((first, second) => first.pickupTime - second.pickupTime);
+    .sort((first, second) => second.pickupTime - first.pickupTime)
+    .slice(0, 5);
   const draftTotalCents = depositLines.reduce((total, line) => {
     const service = services.find((item) => item.id === line.serviceId);
     const quantity = Number(line.quantity);
@@ -1365,7 +1366,10 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
               {pickupReminders.length > 0 && <aside className="pickup-reminder" role="status" aria-live="polite">
                 <div className="pickup-reminder-heading">
                   <span className="pickup-reminder-icon" aria-hidden="true">◷</span>
-                  <div><strong>Rappels de retrait</strong><small>À partir de 2 h avant l’heure prévue · {pickupReminders.length} client(s)</small></div>
+                  <div><strong>Rappels de retrait</strong><small>
+                    {pickupReminders.length === 5 ? "5 derniers clients" : `${pickupReminders.length} client(s)`}
+                    {" "}· à partir de 2 h avant le retrait
+                  </small></div>
                 </div>
                 <ul>
                   {pickupReminders.map(({ deposit, pickupAt, pickupTime }) => (
