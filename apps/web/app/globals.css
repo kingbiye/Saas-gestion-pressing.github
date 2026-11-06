@@ -328,6 +328,10 @@ td small { display: block; margin-top: 3px; color: #87938b; font-size: 10px; }
   .payment-choice-row { grid-template-columns: 1fr; }
   .deposit-item-editor { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .deposit-item-editor > .button { grid-column: 1 / -1; justify-self: end; }
+  .receipt { padding: 20px; }
+  .receipt-brand { gap: 10px; }
+  .receipt-brand-logo { width: 56px; height: 56px; }
+  .receipt h1 { font-size: 20px; }
   .today-label { display: none; }
   .admin-topbar { min-height: 60px; gap: 9px; padding: 0 13px; }
   .admin-topbar .brand { font-size: 14px; }
@@ -354,8 +358,13 @@ td small { display: block; margin-top: 3px; color: #87938b; font-size: 10px; }
 .receipt-modal { width: min(100%, 560px); padding: 18px; border-radius: 14px; background: white; box-shadow: 0 24px 70px rgba(0, 0, 0, .24); }
 .receipt-actions { display: flex; justify-content: flex-end; gap: 9px; margin-bottom: 14px; }
 .receipt { padding: 30px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); background: white; }
+.receipt-brand { display: flex; align-items: center; gap: 14px; min-width: 0; padding-bottom: 15px; border-bottom: 2px solid var(--green-soft); }
+.receipt-brand-logo { display: grid; flex: 0 0 auto; place-items: center; width: 68px; height: 68px; overflow: hidden; padding: 6px; border: 1px solid var(--line); border-radius: 12px; color: var(--green); background: #f7faf7; font: 800 24px Manrope, sans-serif; }
+.receipt-brand-logo img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.receipt-brand > div { min-width: 0; }
+.receipt-brand .eyebrow { margin-bottom: 5px; }
 .receipt h1 { margin: 0; font-size: 24px; }
-.receipt-reference { margin: 7px 0 22px; color: var(--muted); font-size: 12px; }
+.receipt-reference { margin: 12px 0 22px; color: var(--muted); font-size: 12px; }
 .receipt-details { display: grid; gap: 0; margin: 0; }
 .receipt-details > div { display: flex; justify-content: space-between; gap: 18px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .receipt-details dt { color: var(--muted); font-size: 12px; }

@@ -896,6 +896,32 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
       const margin = 16;
       const contentWidth = pageWidth - margin * 2;
       const receiptItems = getDepositItems(receiptDeposit, services);
+      let pdfLogo: { data: string; format: "PNG" | "JPEG" } | null = null;
+      let pdfLogoDimensions: { width: number; height: number } | null = null;
+      const logoDataUrl = shop.logoDataUrl;
+      if (logoDataUrl) {
+        const logoImage = new Image();
+        const loadedLogo = await new Promise<HTMLImageElement>((resolve, reject) => {
+          logoImage.onload = () => resolve(logoImage);
+          logoImage.onerror = () => reject(new Error("Le logo n’a pas pu être préparé pour le reçu."));
+          logoImage.src = logoDataUrl;
+        });
+        pdfLogoDimensions = { width: loadedLogo.naturalWidth, height: loadedLogo.naturalHeight };
+        if (logoDataUrl.startsWith("data:image/webp;")) {
+          const canvas = document.createElement("canvas");
+          canvas.width = loadedLogo.naturalWidth;
+          canvas.height = loadedLogo.naturalHeight;
+          const context = canvas.getContext("2d");
+          if (!context) throw new Error("La préparation du logo pour le reçu a échoué.");
+          context.drawImage(loadedLogo, 0, 0);
+          pdfLogo = { data: canvas.toDataURL("image/png"), format: "PNG" };
+        } else {
+          pdfLogo = {
+            data: logoDataUrl,
+            format: logoDataUrl.startsWith("data:image/jpeg;") ? "JPEG" : "PNG",
+          };
+        }
+      }
       let y = 24;
       const ensureReceiptSpace = (height: number) => {
         if (y + height > pageHeight - 14) {
@@ -912,7 +938,35 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
       pdf.text("REÇU DE DÉPÔT", margin, y);
       y += 10;
       pdf.setFontSize(19);
-      const shopName = pdf.splitTextToSize(shop.name || "Mon pressing", contentWidth);
+      const logoBoxSize = 25;
+      const logoX = pageWidth - margin - logoBoxSize;
+      const logoDimensions = pdfLogoDimensions;
+      if (pdfLogo && logoDimensions) {
+        pdf.setFillColor(255, 255, 255);
+        pdf.setDrawColor(255, 255, 255);
+        pdf.roundedRect(logoX, 10, logoBoxSize, logoBoxSize, 2, 2, "FD");
+        const logoFitSize = logoBoxSize - 3;
+        const logoScale = Math.min(logoFitSize / logoDimensions.width, logoFitSize / logoDimensions.height);
+        const logoWidth = logoDimensions.width * logoScale;
+        const logoHeight = logoDimensions.height * logoScale;
+        pdf.addImage(
+          pdfLogo.data,
+          pdfLogo.format,
+          logoX + (logoBoxSize - logoWidth) / 2,
+          10 + (logoBoxSize - logoHeight) / 2,
+          logoWidth,
+          logoHeight,
+        );
+      } else {
+        pdf.setFillColor(255, 255, 255);
+        pdf.roundedRect(logoX, 10, logoBoxSize, logoBoxSize, 2, 2, "F");
+        pdf.setTextColor(23, 107, 75);
+        pdf.setFontSize(16);
+        pdf.text(shopInitial, logoX + logoBoxSize / 2, 27, { align: "center" });
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFontSize(19);
+      }
+      const shopName = pdf.splitTextToSize(shop.name || "Mon pressing", contentWidth - logoBoxSize - 6);
       pdf.text(shopName, margin, y);
       y += shopName.length * 8 + 5;
       pdf.setFont("helvetica", "normal");
@@ -1531,8 +1585,14 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
           </div>
           {receiptDownloadError && <p className="notice notice-error" role="alert">{receiptDownloadError}</p>}
           <article className="receipt">
-            <p className="eyebrow">REÇU DE DÉPÔT</p>
-            <h1 id="receipt-title">{shop.name || "Mon pressing"}</h1>
+            <header className="receipt-brand">
+              <span className="receipt-brand-logo">
+                {shop.logoDataUrl
+                  ? <img src={shop.logoDataUrl} alt={`Logo ${shop.name || "du pressing"}`} />
+                  : <span aria-hidden="true">{shopInitial}</span>}
+              </span>
+              <div><p className="eyebrow">REÇU DE DÉPÔT</p><h1 id="receipt-title">{shop.name || "Mon pressing"}</h1></div>
+            </header>
             <p className="receipt-reference">Référence : {receiptDeposit.reference}</p>
             <dl className="receipt-details">
               <div><dt>Nom du client</dt><dd>{receiptDeposit.customerName}</dd></div>
