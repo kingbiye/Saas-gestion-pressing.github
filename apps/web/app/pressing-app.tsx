@@ -1338,7 +1338,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
                     {depositLines.map((line, index) => {
                       const selectedService = services.find((service) => service.id === line.serviceId);
                       return <div className="deposit-item-editor" key={line.id}>
-                        <label>
+                        <label className="deposit-service-field">
                           Article / prestation {index + 1}
                           <select
                             value={line.serviceId}
@@ -1353,30 +1353,32 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
                               </option>
                             ))}
                           </select>
-                          {selectedService && <small>{money(selectedService.priceCents)} FCFA par pièce</small>}
+                          {selectedService && <small className="deposit-unit-price">{money(selectedService.priceCents)} FCFA par pièce</small>}
                         </label>
-                        <label>
-                          Quantité
-                          <input
-                            type="number"
-                            min="1"
-                            step="1"
-                            value={line.quantity}
-                            onChange={(event) => setDepositLines((current) => current.map((item) =>
-                              item.id === line.id ? { ...item, quantity: event.target.value } : item))}
-                            required
-                          />
-                        </label>
-                        {depositLines.length > 1 && (
-                          <button
-                            className="button button-small button-danger"
-                            type="button"
-                            aria-label={`Retirer la ligne ${index + 1}`}
-                            onClick={() => setDepositLines((current) => current.filter((item) => item.id !== line.id))}
-                          >
-                            Retirer
-                          </button>
-                        )}
+                        <div className="deposit-item-controls">
+                          <label>
+                            Quantité
+                            <input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={line.quantity}
+                              onChange={(event) => setDepositLines((current) => current.map((item) =>
+                                item.id === line.id ? { ...item, quantity: event.target.value } : item))}
+                              required
+                            />
+                          </label>
+                          {depositLines.length > 1 && (
+                            <button
+                              className="button button-small button-danger"
+                              type="button"
+                              aria-label={`Retirer la ligne ${index + 1}`}
+                              onClick={() => setDepositLines((current) => current.filter((item) => item.id !== line.id))}
+                            >
+                              Retirer
+                            </button>
+                          )}
+                        </div>
                       </div>;
                     })}
                   </div>

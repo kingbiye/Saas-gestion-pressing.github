@@ -326,8 +326,8 @@ td small { display: block; margin-top: 3px; color: #87938b; font-size: 10px; }
   .inline-form { grid-template-columns: 1fr 1fr; padding: 12px; gap: 9px; }
   .inline-form label:first-child { grid-column: 1 / -1; }
   .payment-choice-row { grid-template-columns: 1fr; }
-  .deposit-item-editor { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-  .deposit-item-editor > .button { grid-column: 1 / -1; justify-self: end; }
+  .deposit-item-editor { gap: 11px; padding: 13px; }
+  .deposit-item-controls > label { width: min(100%, 132px); }
   .receipt { padding: 20px; }
   .receipt-brand { gap: 10px; }
   .receipt-brand-logo { width: 56px; height: 56px; }
@@ -382,10 +382,17 @@ td small { display: block; margin-top: 3px; color: #87938b; font-size: 10px; }
 .deposit-items-fieldset { display: grid; min-width: 0; gap: 12px; margin: 0; padding: 0; border: 0; }
 .deposit-items-fieldset legend { margin-bottom: 8px; color: #34433b; font-size: 12px; font-weight: 700; }
 .deposit-items-editor { display: grid; gap: 12px; }
-.deposit-item-editor { display: grid; grid-template-columns: minmax(0, 1fr) 100px auto; align-items: end; gap: 12px; min-width: 0; padding: 14px; border: 1px solid #dfe8e1; border-radius: 10px; background: #f7faf7; }
+.deposit-item-editor { display: grid; gap: 13px; min-width: 0; padding: 16px; border: 1px solid #d7e3da; border-radius: 12px; background: linear-gradient(145deg, #fbfdfb, #f4f8f4); box-shadow: 0 2px 8px rgba(35,57,44,.035); }
 .deposit-item-editor label { min-width: 0; }
+.deposit-item-editor .deposit-service-field { gap: 8px; }
 .deposit-item-editor input, .deposit-item-editor select { box-sizing: border-box; min-width: 0; }
-.deposit-item-editor small { color: var(--muted); font-size: 10px; font-weight: 500; }
+.deposit-item-editor .deposit-service-field select { min-height: 48px; border-color: #cfdcd2; background-color: white; font-weight: 600; }
+.deposit-item-editor .deposit-service-field select:focus { border-color: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 12%, transparent); }
+.deposit-item-editor .deposit-unit-price { justify-self: start; padding: 4px 8px; border-radius: 20px; color: var(--green); background: var(--green-soft); font-size: 10px; font-weight: 700; }
+.deposit-item-controls { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; }
+.deposit-item-controls > label { display: grid; width: min(100%, 150px); gap: 7px; color: var(--muted-dark); font-size: 11px; font-weight: 700; }
+.deposit-item-controls input { min-height: 42px; border-color: #d7e3da; text-align: center; font-size: 15px; font-weight: 700; }
+.deposit-item-controls > .button { flex: 0 0 auto; }
 .deposit-total-preview { display: flex; justify-content: space-between; gap: 12px; padding: 13px 14px; border-radius: 9px; color: var(--green); background: var(--green-soft); font-size: 13px; }
 .deposit-total-preview strong { color: var(--ink); font-size: 16px; }
 .receipt-thanks { margin: 22px 0 0; color: var(--muted); font-size: 12px; text-align: center; }
