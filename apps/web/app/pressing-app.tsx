@@ -1279,6 +1279,14 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
                 style={{ animationDelay: `${index * -5}s` }}
               />
             ))}
+            <div
+              className="topbar-scene topbar-brand-scene"
+              style={{ animationDelay: `${PRESSING_SCENES.length * -5}s` }}
+            >
+              {shop.logoDataUrl
+                ? <img src={shop.logoDataUrl} alt="" />
+                : <span aria-hidden="true">{shopInitial}</span>}
+            </div>
           </div>
           <div className="topbar-shop-name">
             <span className="topbar-caption">Espace professionnel</span>
