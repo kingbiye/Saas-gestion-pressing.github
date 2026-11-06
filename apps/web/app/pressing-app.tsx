@@ -1289,7 +1289,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
             </div>
           </div>
           <div className="topbar-shop-name">
-            <span className="topbar-caption">Espace professionnel</span>
+            <span className="topbar-caption">Bienvenue à votre espace de travail</span>
             <strong title={shop.name}>{shop.name || "Mon pressing"}</strong>
           </div>
           <div className="topbar-actions">
