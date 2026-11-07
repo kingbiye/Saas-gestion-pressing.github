@@ -1145,7 +1145,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
           <a className="brand brand-light" href="/" aria-label="Pressing OS, accueil"><span className="brand-mark">P</span> pressing<span>OS</span></a>
           <div className="auth-pitch">
             <p className="eyebrow eyebrow-light">LE QUOTIDIEN DU PRESSING, SIMPLIFIÉ</p>
-            <h1>Un atelier bien organisé. Des clients bien servis.</h1>
+            <h1>Bienvenue à votre espace de travail, pour travailler comme un professionnel organisé et structuré.</h1>
             <p>Suivez chaque dépôt, maîtrisez votre catalogue et gardez un œil clair sur votre activité.</p>
             <div className="auth-points"><span>✓ Suivi des commandes</span><span>✓ Comptes et dépenses</span><span>✓ Rapports mensuels</span></div>
           </div>
