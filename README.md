@@ -25,7 +25,7 @@ message WhatsApp n'est envoyé.
 
 ## Développement local
 
-Prérequis : Node.js 20+ et une base PostgreSQL Supabase.
+Prérequis : Node.js 20.9+ et une base PostgreSQL Supabase.
 
 ```bash
 npm ci
@@ -104,7 +104,8 @@ publique distincte ni configuration CORS de production n'est nécessaire.
 ## Variables d'environnement
 
 - `DATABASE_URL` : connexion Supabase via le pooler transactionnel.
-- `DIRECT_URL` : connexion PostgreSQL directe Supabase utilisée par Prisma.
+- `DIRECT_URL` : connexion PostgreSQL directe Supabase utilisée par les commandes
+  Prisma (génération du client et opérations de base de données).
 - `AUTH_SECRET` : secret de signature des jetons, obligatoire en production.
 - `PLATFORM_ADMIN_EMAIL` et `PLATFORM_ADMIN_PASSWORD` : identifiants de
   l'administration de la plateforme.

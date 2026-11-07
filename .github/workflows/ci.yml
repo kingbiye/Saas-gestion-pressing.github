@@ -20,11 +20,16 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 20.9.0
           cache: npm
       - name: Install locked dependencies
         run: npm ci
       - name: Generate Prisma client
+        env:
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/pressing
         run: npm run db:generate
       - name: Validate types and production builds
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/pressing
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/pressing
         run: npm run verify

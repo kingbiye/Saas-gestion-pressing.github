@@ -4,7 +4,8 @@ import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { createHash, createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { Prisma, PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { Prisma, PrismaClient } from "./generated/prisma/client.js";
 
 const currentEnvPath = path.resolve(process.cwd(), ".env");
 const monorepoEnvPath = path.resolve(process.cwd(), "..", "..", ".env");
@@ -12,18 +13,21 @@ dotenv.config({ path: existsSync(currentEnvPath) ? currentEnvPath : monorepoEnvP
 
 const runtimeDatabaseUrl = process.env.DATABASE_URL
   ? new URL(process.env.DATABASE_URL)
-  : undefined;
-if (runtimeDatabaseUrl?.hostname.endsWith(".pooler.supabase.com")) {
-  runtimeDatabaseUrl.searchParams.set("connection_limit", "1");
-  if (runtimeDatabaseUrl.port === "6543") {
-    runtimeDatabaseUrl.searchParams.set("pgbouncer", "true");
-  }
+  : null;
+if (!runtimeDatabaseUrl) {
+  throw new Error("DATABASE_URL must be configured before starting the API.");
 }
+runtimeDatabaseUrl.searchParams.delete("connection_limit");
+runtimeDatabaseUrl.searchParams.delete("pgbouncer");
 
 const globalForPrisma = globalThis as typeof globalThis & { pressingPrisma?: PrismaClient };
-const prisma = globalForPrisma.pressingPrisma ?? new PrismaClient(
-  runtimeDatabaseUrl ? { datasources: { db: { url: runtimeDatabaseUrl.toString() } } } : undefined,
-);
+const prisma = globalForPrisma.pressingPrisma ?? new PrismaClient({
+  adapter: new PrismaPg({
+    connectionString: runtimeDatabaseUrl.toString(),
+    max: runtimeDatabaseUrl.hostname.endsWith(".pooler.supabase.com") ? 1 : 10,
+    connectionTimeoutMillis: 5000,
+  }),
+});
 if (process.env.NODE_ENV !== "production") globalForPrisma.pressingPrisma = prisma;
 const maxRequestBytes = 1_500_000;
 const maxLogoBytes = 1_048_576;

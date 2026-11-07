@@ -16,10 +16,10 @@
     "verify": "npm run db:generate && npm run typecheck && npm run build"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.9.0"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.0",
-    "prisma": "^6.19.3"
+    "@prisma/client": "7.10.1",
+    "prisma": "7.10.1"
   }
 }
