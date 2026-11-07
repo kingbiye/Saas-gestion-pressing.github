@@ -25,7 +25,7 @@ message WhatsApp n'est envoyé.
 
 ## Développement local
 
-Prérequis : Node.js 20.9+ et une base PostgreSQL Supabase.
+Prérequis : Node.js 20.19+ et une base PostgreSQL Supabase.
 
 ```bash
 npm ci
