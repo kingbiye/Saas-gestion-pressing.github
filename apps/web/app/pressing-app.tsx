@@ -344,6 +344,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   const [expenseLabel, setExpenseLabel] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
   const [clockNow, setClockNow] = useState(0);
+  const [headerTime, setHeaderTime] = useState(() => new Date());
 
   const refreshBusiness = useCallback(async (selectedMonth = month) => {
     const shopRevisionAtStart = shopSettingsRevision.current;
@@ -524,6 +525,11 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
     const timer = window.setInterval(() => setClockNow(Date.now()), 60_000);
     return () => window.clearInterval(timer);
   }, [adminPage, authenticated, view]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setHeaderTime(new Date()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (adminPage) {
@@ -1295,7 +1301,12 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
                 ? `${billing.plan === "TRIAL" ? "Jusqu’au" : "Actif jusqu’au"} ${new Date(billing.expiresAt).toLocaleDateString("fr-FR")}`
                 : billing.plan === "TRIAL" ? "Période d’essai expirée" : "Abonnement expiré"}</span>
             </div>}
-            <span className="today-label">{new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}</span>
+            <div className="header-date-time" aria-label="Date et heure">
+              <span className="today-label">{headerTime.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}</span>
+              <time className="header-clock" dateTime={headerTime.toISOString()}>
+                {headerTime.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
+              </time>
+            </div>
             <span className="avatar avatar-small">{shopInitial}</span>
           </div>
         </header>
