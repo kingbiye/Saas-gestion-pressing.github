@@ -1102,6 +1102,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   }
 
   async function signOut() {
+    if (!window.confirm("Voulez-vous vraiment vous déconnecter ?")) return;
     clearToken("pressing_token");
     clearToken("pressing_admin_token");
     preferredShopTheme.current = null;
