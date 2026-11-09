@@ -407,3 +407,33 @@ td small { display: block; margin-top: 3px; color: #87938b; font-size: 10px; }
   .topbar-scene { animation: none; opacity: 0; }
   .topbar-brand-scene { opacity: 1; }
 }
+
+@media (min-width: 1440px) {
+  .app-shell { font-size: 15px; grid-template-columns: 264px minmax(0, 1fr); }
+  .workspace { width: min(100%, 1760px); padding: 40px clamp(36px, 4vw, 72px) 68px; }
+  .workspace-label { font-size: 10px; }
+  .nav-item { font-size: 14px; }
+  .profile-row strong { font-size: 12px; }
+  .profile-row small { font-size: 11px; }
+  .topbar { min-height: 148px; }
+  .topbar-caption { font-size: 14px; }
+  .topbar-shop-name strong { font-size: clamp(28px, 2vw, 34px); }
+  .billing-header-badge, .billing-header-badge strong { font-size: 12px; }
+  .today-label { font-size: 13px; }
+  .header-clock { font-size: 15px; }
+  .page-heading h1 { font-size: clamp(32px, 2.4vw, 40px); }
+  .page-heading > .muted { font-size: 15px; }
+  .eyebrow { font-size: 11px; }
+  .section-title h2 { font-size: 20px; }
+  .content-card { padding: 24px; }
+  .button-small { font-size: 13px; }
+  th { color: #68766d; font-size: 11px; }
+  td { font-size: 14px; }
+  td strong { font-size: 14px; }
+  td small { color: #68766d; font-size: 12px; }
+  .status { font-size: 12px; }
+  .payment-option { font-size: 12px; }
+  .pickup-reminder-heading strong { font-size: 15px; }
+  .pickup-reminder-heading small, .pickup-reminder li small { color: #77633e; font-size: 12px; }
+  .pickup-reminder li { font-size: 13px; }
+}
