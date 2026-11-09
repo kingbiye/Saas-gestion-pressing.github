@@ -363,6 +363,10 @@ td small { display: block; margin-top: 3px; color: #87938b; font-size: 10px; }
 }
 .receipt-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; overflow-y: auto; padding: 24px; background: rgba(18, 35, 27, .62); }
 .receipt-modal { width: min(100%, 560px); padding: 18px; border-radius: 14px; background: white; box-shadow: 0 24px 70px rgba(0, 0, 0, .24); }
+.signout-backdrop { position: fixed; z-index: 30; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(18, 35, 27, .58); }
+.signout-dialog { width: min(100%, 420px); padding: 25px; border: 1px solid var(--line); border-radius: 16px; background: white; box-shadow: 0 24px 70px rgba(0, 0, 0, .24); }
+.signout-dialog p { margin: 12px 0 24px; color: var(--muted-dark); font-size: 15px; line-height: 1.5; }
+.signout-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
 .receipt-actions { display: flex; justify-content: flex-end; gap: 9px; margin-bottom: 14px; }
 .receipt { padding: 30px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); background: white; }
 .receipt-brand { display: flex; align-items: center; gap: 14px; min-width: 0; padding-bottom: 15px; border-bottom: 2px solid var(--green-soft); }

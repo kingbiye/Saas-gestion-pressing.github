@@ -220,6 +220,30 @@ function ErrorNotice({ message, onClose }: { message: string; onClose: () => voi
   return <div className="notice notice-error" role="alert"><span>{message}</span><button className="icon-button" onClick={onClose} aria-label="Fermer">×</button></div>;
 }
 
+function SignOutConfirmation({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void }) {
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onCancel();
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onCancel]);
+
+  return (
+    <div className="signout-backdrop" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onCancel();
+    }}>
+      <section className="signout-dialog" role="alertdialog" aria-modal="true" aria-labelledby="signout-question">
+        <p id="signout-question">Voulez-vous vraiment vous déconnecter ?</p>
+        <div className="signout-actions">
+          <button className="button button-secondary" onClick={onCancel} autoFocus>Annuler</button>
+          <button className="button button-danger" onClick={onConfirm}>Se déconnecter</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function PageHeading({ eyebrow, title, description }: { eyebrow: string; title: string; description?: string }) {
   return <div className="page-heading"><p className="eyebrow">{eyebrow}</p><h1>{title}</h1>{description && <p className="muted">{description}</p>}</div>;
 }
@@ -293,6 +317,7 @@ function DepositRow({ deposit, onAdvance, onPaymentChange, onCancelPending, onPr
 export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   const [authenticated, setAuthenticated] = useState(false);
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
+  const [signOutConfirmationOpen, setSignOutConfirmationOpen] = useState(false);
   const [register, setRegister] = useState(true);
   const [forgotMode, setForgotMode] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
@@ -1101,8 +1126,12 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
     }, true);
   }
 
-  async function signOut() {
-    if (!window.confirm("Voulez-vous vraiment vous déconnecter ?")) return;
+  function signOut() {
+    setSignOutConfirmationOpen(true);
+  }
+
+  function confirmSignOut() {
+    setSignOutConfirmationOpen(false);
     clearToken("pressing_token");
     clearToken("pressing_admin_token");
     preferredShopTheme.current = null;
@@ -1231,6 +1260,10 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
             })}</tbody></table></div> : <p className="empty-state">Aucune boutique enregistrée pour le moment.</p>}
           </section>
         </section>
+        {signOutConfirmationOpen && <SignOutConfirmation
+          onCancel={() => setSignOutConfirmationOpen(false)}
+          onConfirm={confirmSignOut}
+        />}
       </main>
     );
   }
@@ -1593,6 +1626,10 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
           </section>}
         </div>
       </section>
+      {signOutConfirmationOpen && <SignOutConfirmation
+        onCancel={() => setSignOutConfirmationOpen(false)}
+        onConfirm={confirmSignOut}
+      />}
       {receiptDeposit && <div className="receipt-backdrop">
         <section className="receipt-modal" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
           <div className="receipt-actions">
