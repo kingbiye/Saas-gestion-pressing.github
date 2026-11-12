@@ -1006,19 +1006,27 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
 
       y = 62;
       const addDetail = (label: string, value: string) => {
-        const lines = pdf.splitTextToSize(value, contentWidth * 0.58);
-        const detailHeight = Math.max(10, lines.length * 5 + 4);
+        const lines: string[] = pdf.splitTextToSize(value, contentWidth * 0.58);
+        const fontSize = 9;
+        const fontHeight = fontSize * 25.4 / 72;
+        const lineHeight = 5;
+        const verticalPadding = 4;
+        const textHeight = fontHeight + (lines.length - 1) * lineHeight;
+        const detailHeight = Math.max(12, textHeight + verticalPadding * 2);
         ensureReceiptSpace(detailHeight + 2);
+        const textY = y + (detailHeight - textHeight) / 2 + fontHeight;
         pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(9);
+        pdf.setFontSize(fontSize);
         pdf.setTextColor(100, 116, 109);
-        pdf.text(label, margin, y);
+        pdf.text(label, margin, textY + (lines.length - 1) * lineHeight / 2);
         pdf.setFont("helvetica", "bold");
         pdf.setTextColor(32, 45, 39);
-        pdf.text(lines, pageWidth - margin, y, { align: "right" });
+        lines.forEach((line, index) => {
+          pdf.text(line, pageWidth - margin, textY + index * lineHeight, { align: "right" });
+        });
         y += detailHeight;
         pdf.setDrawColor(222, 230, 225);
-        pdf.line(margin, y - 2, pageWidth - margin, y - 2);
+        pdf.line(margin, y, pageWidth - margin, y);
       };
 
       addDetail("Nom du client", receiptDeposit.customerName);
@@ -1040,25 +1048,33 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
       pdf.setDrawColor(222, 230, 225);
       pdf.line(margin, y - 2, pageWidth - margin, y - 2);
       for (const item of receiptItems) {
-        const nameLines = pdf.splitTextToSize(item.serviceName, 45);
-        const rowHeight = Math.max(9, nameLines.length * 4 + 4);
+        const nameLines: string[] = pdf.splitTextToSize(item.serviceName, 45);
+        const fontSize = 8;
+        const fontHeight = fontSize * 25.4 / 72;
+        const lineHeight = 4;
+        const textHeight = fontHeight + (nameLines.length - 1) * lineHeight;
+        const rowHeight = Math.max(12, textHeight + 8);
         ensureReceiptSpace(rowHeight + 2);
+        const textY = y + (rowHeight - textHeight) / 2 + fontHeight;
+        const valueY = textY + (nameLines.length - 1) * lineHeight / 2;
         pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(8);
+        pdf.setFontSize(fontSize);
         pdf.setTextColor(32, 45, 39);
-        pdf.text(nameLines, margin, y);
-        pdf.text(String(item.quantity), margin + 56, y, { align: "center" });
-        pdf.text(money(item.unitPriceCents).replace(/[\u00a0\u202f]/g, " "), margin + 86, y, { align: "right" });
+        nameLines.forEach((line, index) => {
+          pdf.text(line, margin, textY + index * lineHeight);
+        });
+        pdf.text(String(item.quantity), margin + 56, valueY, { align: "center" });
+        pdf.text(money(item.unitPriceCents).replace(/[\u00a0\u202f]/g, " "), margin + 86, valueY, { align: "right" });
         pdf.setFont("helvetica", "bold");
         pdf.text(
           money(item.unitPriceCents * item.quantity).replace(/[\u00a0\u202f]/g, " "),
           pageWidth - margin,
-          y,
+          valueY,
           { align: "right" },
         );
         y += rowHeight;
         pdf.setDrawColor(239, 242, 240);
-        pdf.line(margin, y - 2, pageWidth - margin, y - 2);
+        pdf.line(margin, y, pageWidth - margin, y);
       }
 
       ensureReceiptSpace(34);
