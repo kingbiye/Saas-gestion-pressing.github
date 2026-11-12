@@ -1079,19 +1079,23 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
 
       ensureReceiptSpace(34);
       y += 3;
+      const totalCardHeight = 25;
       pdf.setFillColor(237, 246, 240);
-      pdf.roundedRect(margin, y, contentWidth, 25, 3, 3, "F");
+      pdf.roundedRect(margin, y, contentWidth, totalCardHeight, 3, 3, "F");
       pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(9);
+      const totalLabelFontSize = 9;
+      pdf.setFontSize(totalLabelFontSize);
       pdf.setTextColor(23, 107, 75);
-      pdf.text("MONTANT TOTAL", margin + 5, y + 10);
+      const totalLabelFontHeight = totalLabelFontSize * 25.4 / 72;
+      pdf.text("MONTANT TOTAL", margin + 5, y + (totalCardHeight + totalLabelFontHeight) / 2);
       const totalText = `${money(receiptDeposit.priceCents).replace(/[\u00a0\u202f]/g, " ")} FCFA`;
       const amountMaxWidth = contentWidth - 10;
       pdf.setFontSize(18);
       const amountFontSize = Math.min(18, (18 * amountMaxWidth) / pdf.getTextWidth(totalText));
       pdf.setFontSize(amountFontSize);
       pdf.setTextColor(32, 45, 39);
-      pdf.text(totalText, pageWidth - margin - 5, y + 17, { align: "right" });
+      const amountFontHeight = amountFontSize * 25.4 / 72;
+      pdf.text(totalText, pageWidth - margin - 5, y + (totalCardHeight + amountFontHeight) / 2, { align: "right" });
       y += 30;
 
       ensureReceiptSpace(16);
