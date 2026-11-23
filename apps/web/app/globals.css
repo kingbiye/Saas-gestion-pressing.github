@@ -228,6 +228,15 @@ td small { display: block; margin-top: 3px; color: #87938b; font-size: 10px; }
 .report-card { padding: clamp(18px, 3vw, 30px); }
 .shop-settings-card { max-width: 760px; }
 .shop-settings-card > .muted { margin: -5px 0 22px; font-size: 12px; }
+.app-guide-summary { display: flex; justify-content: space-between; align-items: center; gap: 16px; cursor: pointer; list-style: none; }
+.app-guide-summary::-webkit-details-marker { display: none; }
+.app-guide-summary > span:first-child { display: grid; gap: 5px; }
+.app-guide-summary .eyebrow { margin: 0; }
+.app-guide-summary strong { color: var(--ink); font-size: 17px; }
+.app-guide-toggle { display: grid; flex: 0 0 auto; place-items: center; width: 32px; height: 32px; border: 1px solid var(--line); border-radius: 50%; color: var(--green); font-size: 20px; transition: transform .18s ease; }
+.app-guide[open] .app-guide-toggle { transform: rotate(180deg); }
+.app-guide-content { margin-top: 20px; }
+.app-guide-content > .muted { margin: 0 0 22px; font-size: 12px; }
 .app-guide h3 { margin: 20px 0 12px; color: var(--ink); font-size: 14px; }
 .app-guide-steps { display: grid; gap: 12px; margin: 0; padding-left: 22px; color: var(--muted-dark); font-size: 12px; line-height: 1.65; }
 .app-guide-steps li { padding-left: 4px; }

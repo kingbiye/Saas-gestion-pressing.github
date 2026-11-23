@@ -1645,25 +1645,30 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
             </div>
           </section>}
 
-          {view === "shop" && <section className="content-card shop-settings-card app-guide">
-            <div className="section-title"><div><p className="eyebrow">GUIDE D’UTILISATION</p><h2>Découvrir PressingOS</h2></div></div>
-            <p className="muted">
-              PressingOS vous aide à gérer votre pressing au même endroit : les prestations, les dépôts des clients,
-              leur suivi, les paiements, les dépenses et les résultats de votre activité.
-            </p>
-            <h3>Comment utiliser l’application ?</h3>
-            <ol className="app-guide-steps">
-              <li><strong>Configurez votre catalogue.</strong> Dans « Catalogue », ajoutez vos prestations et leurs tarifs. Vous pourrez les sélectionner lors de chaque dépôt.</li>
-              <li><strong>Enregistrez les commandes.</strong> Dans « Dépôts », renseignez le client, choisissez les articles et quantités, puis indiquez la date de retrait, le casier et l’état du paiement si nécessaire.</li>
-              <li><strong>Suivez le travail.</strong> Retrouvez les commandes dans la liste des dépôts, faites évoluer leur état et mettez à jour le paiement. Le reçu peut être téléchargé depuis la commande.</li>
-              <li><strong>Notez vos dépenses.</strong> Dans « Dépenses », enregistrez les frais du pressing pour les inclure dans le suivi financier.</li>
-              <li><strong>Consultez votre activité.</strong> La « Vue d’ensemble » présente les principaux chiffres et dernières commandes. « Rapports » détaille les recettes, dépenses, résultat net et prestations du mois.</li>
-              <li><strong>Personnalisez votre espace.</strong> Dans « Paramètres », choisissez le thème, le style et le logo de votre boutique. Vous pouvez aussi contacter l’administrateur pour obtenir de l’aide ou renouveler votre accès.</li>
-            </ol>
-            <p className="app-guide-note">
-              <strong>Hors connexion :</strong> après une première connexion en ligne, les dernières données consultées restent disponibles sur cet appareil et les nouveaux dépôts peuvent être enregistrés puis synchronisés au retour d’Internet. Les autres modifications nécessitent une connexion.
-            </p>
-          </section>}
+          {view === "shop" && <details className="content-card shop-settings-card app-guide">
+            <summary className="app-guide-summary">
+              <span><span className="eyebrow">GUIDE D’UTILISATION</span><strong>Découvrir PressingOS</strong></span>
+              <span className="app-guide-toggle" aria-hidden="true">⌄</span>
+            </summary>
+            <div className="app-guide-content">
+              <p className="muted">
+                PressingOS vous aide à gérer votre pressing au même endroit : les prestations, les dépôts des clients,
+                leur suivi, les paiements, les dépenses et les résultats de votre activité.
+              </p>
+              <h3>Comment utiliser l’application ?</h3>
+              <ol className="app-guide-steps">
+                <li><strong>Configurez votre catalogue.</strong> Dans « Catalogue », ajoutez vos prestations et leurs tarifs. Vous pourrez les sélectionner lors de chaque dépôt.</li>
+                <li><strong>Enregistrez les commandes.</strong> Dans « Dépôts », renseignez le client, choisissez les articles et quantités, puis indiquez la date de retrait, le casier et l’état du paiement si nécessaire.</li>
+                <li><strong>Suivez le travail.</strong> Retrouvez les commandes dans la liste des dépôts, faites évoluer leur état et mettez à jour le paiement. Le reçu peut être téléchargé depuis la commande.</li>
+                <li><strong>Notez vos dépenses.</strong> Dans « Dépenses », enregistrez les frais du pressing pour les inclure dans le suivi financier.</li>
+                <li><strong>Consultez votre activité.</strong> La « Vue d’ensemble » présente les principaux chiffres et dernières commandes. « Rapports » détaille les recettes, dépenses, résultat net et prestations du mois.</li>
+                <li><strong>Personnalisez votre espace.</strong> Dans « Paramètres », choisissez le thème, le style et le logo de votre boutique. Vous pouvez aussi contacter l’administrateur pour obtenir de l’aide ou renouveler votre accès.</li>
+              </ol>
+              <p className="app-guide-note">
+                <strong>Hors connexion :</strong> après une première connexion en ligne, les dernières données consultées restent disponibles sur cet appareil et les nouveaux dépôts peuvent être enregistrés puis synchronisés au retour d’Internet. Les autres modifications nécessitent une connexion.
+              </p>
+            </div>
+          </details>}
         </div>
       </section>
       {signOutConfirmationOpen && <SignOutConfirmation
