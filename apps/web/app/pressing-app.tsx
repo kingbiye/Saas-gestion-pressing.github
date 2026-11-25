@@ -1367,6 +1367,7 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
 
   const heading: Record<View, { eyebrow: string; title: string; description: string }> = {
     overview: { eyebrow: "VOTRE ACTIVITÉ", title: "Vue d'ensemble", description: "Retrouvez en un coup d'œil l'essentiel de votre pressing." },
+    savings: { eyebrow: "PROJECTION FINANCIÈRE", title: "Technique d’épargne", description: "Estimez l’épargne cumulée selon l’objectif, le montant et la fréquence choisis." },
     deposits: { eyebrow: "SUIVI DES COMMANDES", title: "Dépôts", description: "Enregistrez les vêtements confiés et suivez leur avancement." },
     catalog: { eyebrow: "VOS PRESTATIONS", title: "Catalogue", description: "Gérez les services et tarifs proposés à vos clients." },
     expenses: { eyebrow: "SUIVI FINANCIER", title: "Dépenses", description: "Enregistrez vos frais pour suivre la rentabilité de l'activité." },
