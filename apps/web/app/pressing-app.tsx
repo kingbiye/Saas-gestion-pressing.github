@@ -58,7 +58,8 @@ type AdminTenant = {
   createdAt: string;
   _count: { users: number; deposits: number };
 };
-type View = "overview" | "deposits" | "catalog" | "expenses" | "reports" | "shop";
+type View = "overview" | "savings" | "deposits" | "catalog" | "expenses" | "reports" | "shop";
+type SavingsFrequency = "day" | "month" | "year";
 type ShopColorTheme = "forest" | "ocean" | "royal" | "plum" | "terracotta" | "sunrise" | "slate";
 type ShopDesignPreset = "atelier" | "classique" | "signature";
 type ShopSettings = { name: string; logoDataUrl: string | null; colorTheme: ShopColorTheme; designPreset: ShopDesignPreset };
@@ -103,6 +104,7 @@ const STATUS_ORDER = ["RECEIVED", "IN_PROGRESS", "READY", "PICKED_UP"];
 const TRIAL_EXPIRED_MESSAGE = "Votre période d’essai est terminée. Vos données sont conservées. Connectez-vous avec le même compte après le renouvellement de l’accès par l’administrateur.";
 const NAV_ITEMS: { id: View; label: string; icon: string }[] = [
   { id: "overview", label: "Vue d'ensemble", icon: "⌂" },
+  { id: "savings", label: "Technique d’épargne", icon: "◉" },
   { id: "deposits", label: "Dépôts", icon: "▤" },
   { id: "catalog", label: "Catalogue", icon: "◇" },
   { id: "expenses", label: "Dépenses", icon: "↗" },
@@ -112,6 +114,41 @@ const NAV_ITEMS: { id: View; label: string; icon: string }[] = [
 
 function money(cents: number) {
   return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(cents / 100);
+}
+
+function formatFcfaAmount(amount: number) {
+  return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(amount)} FCFA`;
+}
+
+function savingsGoalDate(frequency: SavingsFrequency, periods: number): Date | null {
+  const now = new Date();
+  if (frequency === "day") {
+    const date = new Date(now);
+    date.setDate(date.getDate() + periods);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  const day = now.getDate();
+  const monthOffset = frequency === "month" ? periods : periods * 12;
+  const targetMonth = now.getFullYear() * 12 + now.getMonth() + monthOffset;
+  if (!Number.isSafeInteger(targetMonth)) return null;
+  const targetYear = Math.floor(targetMonth / 12);
+  const targetMonthIndex = targetMonth % 12;
+  const firstDay = new Date(targetYear, targetMonthIndex, 1);
+  if (Number.isNaN(firstDay.getTime())) return null;
+  const lastDay = new Date(targetYear, targetMonthIndex + 1, 0).getDate();
+  firstDay.setDate(Math.min(day, lastDay));
+  return firstDay;
+}
+
+function savingsDurationLabel(frequency: SavingsFrequency, periods: number) {
+  if (frequency === "day") return `${periods} jour${periods > 1 ? "s" : ""}`;
+  if (frequency === "year") return `${periods} an${periods > 1 ? "s" : ""}`;
+  const years = Math.floor(periods / 12);
+  const months = periods % 12;
+  const yearLabel = years ? `${years} an${years > 1 ? "s" : ""}` : "";
+  const monthLabel = months ? `${months} mois` : "";
+  return yearLabel && monthLabel ? `${yearLabel} et ${monthLabel}` : yearLabel || monthLabel;
 }
 
 function monthLabel(month: string) {
@@ -343,6 +380,13 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
   const [view, setView] = useState<View>("overview");
   const [services, setServices] = useState<Service[]>([]);
   const [deposits, setDeposits] = useState<Deposit[]>([]);
+  const [savingsClientMode, setSavingsClientMode] = useState<"existing" | "new">("existing");
+  const [selectedSavingsClientKey, setSelectedSavingsClientKey] = useState("");
+  const [newSavingsClientName, setNewSavingsClientName] = useState("");
+  const [newSavingsClientPhone, setNewSavingsClientPhone] = useState("");
+  const [savingsGoalAmount, setSavingsGoalAmount] = useState("");
+  const [savingsContributionAmount, setSavingsContributionAmount] = useState("");
+  const [savingsFrequency, setSavingsFrequency] = useState<SavingsFrequency>("month");
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [report, setReport] = useState<Report | null>(null);
   const [billing, setBilling] = useState<Billing | null>(null);
@@ -625,6 +669,39 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
       ? total + service.priceCents * quantity
       : total;
   }, 0);
+  const savingsClients = Array.from(new Map(deposits
+    .filter((deposit) => deposit.customerName.trim())
+    .map((deposit) => {
+      const name = deposit.customerName.trim();
+      const phone = deposit.customerPhone?.trim() ?? "";
+      const key = `${name.toLocaleLowerCase("fr-FR")}|${phone.replace(/\D/g, "")}`;
+      return [key, { key, name, phone }] as const;
+    })).values());
+  const selectedSavingsClient = savingsClients.find((client) => client.key === selectedSavingsClientKey)
+    ?? savingsClients[0]
+    ?? null;
+  const savingsGoal = Number(savingsGoalAmount);
+  const savingsContribution = Number(savingsContributionAmount);
+  const savingsAnnualFrequency = savingsFrequency === "day" ? 365 : savingsFrequency === "month" ? 12 : 1;
+  const savingsAnnualProjection = savingsContribution * savingsAnnualFrequency;
+  const validSavingsInputs = /^\d+$/.test(savingsGoalAmount)
+    && /^\d+$/.test(savingsContributionAmount)
+    && Number.isSafeInteger(savingsGoal)
+    && Number.isSafeInteger(savingsContribution)
+    && savingsGoal > 0
+    && savingsContribution > 0
+    && Number.isSafeInteger(savingsAnnualProjection);
+  const savingsClientName = savingsClientMode === "new" ? newSavingsClientName.trim() : selectedSavingsClient?.name ?? "";
+  const savingsClientPhone = savingsClientMode === "new" ? newSavingsClientPhone.trim() : selectedSavingsClient?.phone ?? "";
+  const savingsProjection = validSavingsInputs ? {
+    annual: savingsAnnualProjection,
+    monthlyAverage: Math.round(savingsAnnualProjection / 12),
+    periodsToGoal: Math.ceil(savingsGoal / savingsContribution),
+  } : null;
+  const savingsGoalDateEstimate = savingsProjection
+    ? savingsGoalDate(savingsFrequency, savingsProjection.periodsToGoal)
+    : null;
+  const hasSavingsAmounts = Boolean(savingsGoalAmount || savingsContributionAmount);
 
   function storeToken(key: string, token: string) {
     clearToken(key === "pressing_token" ? "pressing_admin_token" : "pressing_token");
@@ -1394,6 +1471,108 @@ export function PressingApp({ adminPage = false }: { adminPage?: boolean }) {
               </section>
             </div>
           </>}
+
+          {view === "savings" && <div className="page-grid savings-page-grid">
+            <section className="content-card">
+              <div className="section-title"><div><p className="eyebrow">VOTRE SIMULATION</p><h2>Définir l’objectif</h2></div></div>
+              <div className="form-stack">
+                <label>
+                  Client
+                  <select value={savingsClientMode} onChange={(event) => setSavingsClientMode(event.target.value === "new" ? "new" : "existing")}>
+                    <option value="existing">Choisir un client existant</option>
+                    <option value="new">Saisir un nouveau client</option>
+                  </select>
+                </label>
+                {savingsClientMode === "existing"
+                  ? <label>
+                    Client existant
+                    <select
+                      value={selectedSavingsClient?.key ?? ""}
+                      onChange={(event) => setSelectedSavingsClientKey(event.target.value)}
+                      disabled={!savingsClients.length}
+                    >
+                      {!savingsClients.length && <option value="">Aucun client enregistré</option>}
+                      {savingsClients.map((client) => (
+                        <option key={client.key} value={client.key}>
+                          {client.name}{client.phone ? ` · ${client.phone}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  : <>
+                    <label>Nom du client<input value={newSavingsClientName} onChange={(event) => setNewSavingsClientName(event.target.value)} placeholder="Ex. Marie" /></label>
+                    <label>Téléphone <span className="optional">Facultatif</span><input type="tel" value={newSavingsClientPhone} onChange={(event) => setNewSavingsClientPhone(event.target.value)} placeholder="Ex. 06 123 45 67" /></label>
+                  </>}
+                <label>
+                  Objectif d’épargne (FCFA)
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    inputMode="numeric"
+                    value={savingsGoalAmount}
+                    onChange={(event) => setSavingsGoalAmount(event.target.value)}
+                    placeholder="Ex. 1 000 000"
+                  />
+                </label>
+                <label>
+                  Montant mis de côté à chaque versement (FCFA)
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    inputMode="numeric"
+                    value={savingsContributionAmount}
+                    onChange={(event) => setSavingsContributionAmount(event.target.value)}
+                    placeholder="Ex. 3 000"
+                  />
+                </label>
+                <label>
+                  Fréquence des versements
+                  <select
+                    value={savingsFrequency}
+                    onChange={(event) => {
+                      const frequency = event.target.value;
+                      if (frequency === "day" || frequency === "month" || frequency === "year") {
+                        setSavingsFrequency(frequency);
+                      }
+                    }}
+                  >
+                    <option value="day">Chaque jour</option>
+                    <option value="month">Chaque mois</option>
+                    <option value="year">Chaque année</option>
+                  </select>
+                </label>
+              </div>
+            </section>
+            <section className="content-card savings-projection-card" aria-live="polite">
+              <div className="section-title"><div><p className="eyebrow">RÉSULTAT</p><h2>Projection d’épargne</h2></div></div>
+              {savingsProjection
+                ? <>
+                  {savingsClientName && <p className="savings-client-summary">
+                      Simulation pour <strong>{savingsClientName}</strong>{savingsClientPhone && ` · ${savingsClientPhone}`}
+                    </p>}
+                  <div className="stats-grid savings-stats">
+                    <StatCard label="Équivalent par jour" value={formatFcfaAmount(Math.round(savingsProjection.annual / 365))} detail="moyenne estimée" />
+                    <StatCard label="Équivalent par mois" value={formatFcfaAmount(savingsProjection.monthlyAverage)} detail="moyenne estimée" tone="green" />
+                    <StatCard label="Total après 1 an" value={formatFcfaAmount(savingsProjection.annual)} detail={`${formatFcfaAmount(savingsContribution)} ${savingsFrequency === "day" ? "par jour" : savingsFrequency === "month" ? "par mois" : "par an"}`} tone="blue" />
+                  </div>
+                  <div className="savings-goal-result">
+                    <span>Objectif de {formatFcfaAmount(savingsGoal)} atteint en</span>
+                    <strong>{savingsDurationLabel(savingsFrequency, savingsProjection.periodsToGoal)}</strong>
+                    {savingsGoalDateEstimate && <small>Autour du {savingsGoalDateEstimate.toLocaleDateString("fr-FR", { dateStyle: "long" })}</small>}
+                  </div>
+                </>
+                : <p className="empty-state">
+                  {hasSavingsAmounts
+                    ? "Saisissez des montants entiers positifs et compatibles avec le calcul."
+                    : "Saisissez un objectif et un montant de versement pour afficher la projection."}
+                </p>}
+              <p className="savings-disclaimer">
+                Estimation sans intérêts ni frais, basée sur des versements réguliers. Aucun versement ni plan n’est enregistré dans l’application.
+              </p>
+            </section>
+          </div>}
 
           {view === "deposits" && <div className="page-grid">
             <section className="content-card form-card">

@@ -177,6 +177,17 @@ td small { display: block; margin-top: 3px; color: #87938b; font-size: 10px; }
 .pickup-reminder li > div > strong { overflow: hidden; color: var(--ink); text-overflow: ellipsis; }
 .pickup-reminder li > span { flex: 0 0 auto; color: #73541d; font-weight: 700; text-align: right; }
 .pickup-reminder li > .pickup-reminder-overdue { color: #a63f30; }
+.savings-page-grid { grid-template-columns: minmax(260px, .9fr) minmax(0, 1.1fr); }
+.savings-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+.savings-stats .stat-card { padding: 14px; }
+.savings-stats .stat-card > strong { font-size: clamp(16px, 1.5vw, 21px); }
+.savings-client-summary { margin: 0 0 14px; color: var(--muted); font-size: 12px; }
+.savings-client-summary strong { color: var(--ink); }
+.savings-goal-result { display: grid; gap: 6px; padding: 17px; border-radius: 10px; color: var(--green); background: var(--green-soft); }
+.savings-goal-result span { color: var(--muted-dark); font-size: 12px; }
+.savings-goal-result strong { color: var(--ink); font-size: 22px; }
+.savings-goal-result small { color: var(--muted); font-size: 11px; }
+.savings-disclaimer { margin: 16px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
 .status { display: inline-flex; align-items: center; padding: 5px 8px; border-radius: 20px; color: #7a6724; background: #f8f3de; font-size: 10px; font-weight: 700; white-space: nowrap; }
 .status-in_progress { color: #536a82; background: #eaf1f7; }
 .status-ready { color: #216c48; background: #e5f3e9; }
